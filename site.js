@@ -553,6 +553,13 @@ function header(page) {
 	document.body.insertBefore(el, document.body.firstChild);
 }
 
+function banner() {
+	var el = document.createElement('div');
+	el.className = 'soon';
+	el.textContent = 'Coming soon. The first release is planned for the end of November 2026.';
+	document.body.insertBefore(el, document.body.firstChild);
+}
+
 function sidebar(page, toc) {
 	return NAV.map(function (group) {
 		var links = group.pages.map(function (entry) {
@@ -593,6 +600,7 @@ function render() {
 	var page = current();
 	var source = document.querySelector('script[type="text/markdown"]');
 	header(page);
+	banner();
 	if (source) {
 		document.body.classList.add('docs');
 		var doc = markdown(source.textContent);

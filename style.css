@@ -67,6 +67,16 @@ a:hover {
 	padding: 0 1.5rem;
 }
 
+/* banner: the release date, above the lid */
+
+.soon {
+	background: var(--tamago);
+	color: var(--kiln);
+	font: 600 0.85rem var(--mono);
+	text-align: center;
+	padding: 0.45rem 1.5rem;
+}
+
 /* header: the tray lid */
 
 header.site {
