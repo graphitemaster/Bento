@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>IR and Bytecode · Bento</title>
+	<meta name="description" content="Bento IR is SSA with structured control flow and can be built, edited, verified, linked while incomplete, and shipped as bytecode that is safe to load from anywhere.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# IR and bytecode
+
+## Structured control flow
+
+Control flow in the IR is structured as SPIR-V and GLSL require. There is no control flow graph and no goto. The then and else blocks of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `discard`. Loops are found by walking a tree rather than by computing dominators.
+
+Values are not passed through jumps but rather merged by PHIs. PHIs after an `if` have one operand per arm. PHIs at the top of a loop have the entry value and then one operand per `continue` in edge order. PHIs after a loop have one per `break`.
+
+```bento sum.bento
+module demo;
+
+export fn sum(n: i32, scale: f32) -> f32 {
+	let total = 0.0;
+	for let i = 0; i < n; i += 1 {
+		if i % 2 == 0 {
+			continue;
+		}
+		total += scale * 2.0;
+	}
+	return total;
+}
+```
+
+```ir bento-c --opt sum.bento -o - | bento-strip - | bento-dis - -o -
+module demo
+
+fn @sum(i32, f32) -> f32 export
+%bb0(%r1, %r2):
+	loop %bb1
+%bb1:
+	%r23 = phi $0, %r15, %r21
+	%r25 = phi $0.0, %r25, %r19
+	%r27 = igeq %r23, %r1
+	if %r27, %bb2, %bb3
+%bb2:
+	break %bb8, $0
+%bb3:
+	yield %bb4
+%bb4:
+	%r28 = ishr %r23, $31
+	%r29 = band %r28, $1
+	%r30 = iadd %r23, %r29
+	%r31 = band %r30, $-2
+	%r12 = isub %r23, %r31
+	%r13 = ieq %r12, $0
+	if %r13, %bb5, %bb6
+%bb5:
+	%r15 = iadd %r23, $1
+	continue %bb1, $0
+%bb6:
+	yield %bb7
+%bb7:
+	%r18 = fmul %r2, $2.0
+	%r19 = fadd %r18, %r25
+	%r21 = iadd %r23, $1
+	continue %bb1, $1
+%bb8:
+	%r26 = phi %r25
+	return %r26
+```
+
+Nesting is flattened under labels in printed IR. `%r` is a value, `%bb` a block, `$` a literal, and `@` a function or global. Uniformity qualifiers other than `simdgroup` are printed after the opcode, as in `loop.thread`.
+
+## Instructions and types
+
+Every instruction, type, and printed form is listed in the [IR reference](ir-reference.html). Arithmetic is split into signed, unsigned, and float only where the bits differ. Builtins such as `min` and `abs` are opcodes that fold rather than opaque calls. Literals are operands rather than instructions and are in scope everywhere in a function.
+
+Every opcode is pure, convergent, or impure. Passes are written against those effects rather than against opcode names. Convergent instructions such as derivatives, barriers, and simdgroup operations are never moved into or out of control flow.
+
+Fast-math flags are set per block and apply to the instructions directly in it. The types are those of the language. Uniformity is recorded on every `if` and loop, and on every function as the scope and the stages.
+
+Generic functions are checked once and stored in bytecode as templates. Calls are instantiated by substitution, at the end of lowering for local generics and in the linker for imported ones.
+
+::: note
+Instantiation never fails.
+:::
+
+## Building IR without source
+
+Any program can build IR through the public builder. Failures in the builder are sticky: every later build does nothing and the status is checked once at the end. Whole modules are written out with `bento-llc --target=bto` as C that builds them again:
+
+```c sum.c
+	f = bto_ir_function_begin(b, BTO_STRING("sum"), T[2], BTO_IR_LINKAGE_EXPORT);
+	r1 = f->body->args.data[0];
+	r2 = f->body->args.data[1];
+	k0 = bto_ir_build_f32(b, 0.0);
+	k1 = bto_ir_build_i32(b, 0);
+	i = bto_ir_build_loop(b);
+	{
+		BTOIRInst* const n0 = i;
+		bto_ir_block_begin(b, bto_ir_blocks(n0).data[0]);
+		r23 = bto_ir_build_ternary(b, BTO_IR_PHI, T[1], k1, BTO_IR_VALUE_NONE, BTO_IR_VALUE_NONE);
+		r25 = bto_ir_build_ternary(b, BTO_IR_PHI, T[0], k0, BTO_IR_VALUE_NONE, BTO_IR_VALUE_NONE);
+		r27 = bto_ir_build_binary(b, BTO_IR_IGEQ, T[3], r23, r1);
+		...
+		r18 = bto_ir_build_binary(b, BTO_IR_FMUL, T[0], r2, k4);
+		r19 = bto_ir_build_binary(b, BTO_IR_FADD, T[0], r18, r25);
+		r21 = bto_ir_build_binary(b, BTO_IR_IADD, T[1], r23, k3);
+		bto_ir_build_jump(b, BTO_IR_CONTINUE);
+		bto_ir_block_end(b);
+	}
+	...
+	bto_ir_function_end(b);
+```
+
+## Verification
+
+Bytecode is verified before any tool uses it. Passes and generators depend on what the verifier guarantees: operands defined before use, well formed control flow and types, calls allowed by the stages and uniformity of the callee, and entry point bindings allowed by the stage.
+
+Loading an IR image must be verified to prevent out of bounds and type confusion. Every offset, alignment, and length is checked before it is trusted. Objects lie in the order they are reached and each must begin where the last one ended, so none can overlap. Nesting is limited. The image is used in place, with nothing copied. No input may crash, hang, or exhaust memory.
+
+```text bento-val
+oldver.bbc: error: not an IR image from this build of Bento
+cut.bbc: error: the IR image is shorter than its header says
+ptr.bbc: error: the IR image is damaged: a pointer points outside it or into another object, or blocks nest too deep
+```
+
+## Bytecode
+
+Modules are saved to `.bbc` images as one flat block with every pointer turned into an offset and are loaded back with a single read. Images of the same module are identical byte for byte. Images can be moved together with the sources they were built from.
+
+Bytecode is a delivery format rather than a step to throw away:
+
+- Imports left unresolved in a link stay imports for a later link.
+- Shaders compiled from source, IR built by other programs, and modules compiled offline can all be linked together.
+- The file table and every location are removed with `bento-strip` without changing the generated code.
+
+```ir bento-dis partial.bbc
+import bits
+
+fn @tint(location 0 Flat u32) -> Out [color 0] export Fragment
+%bb0(%r1):
+	%r2 = call @noise::hash, %r1
+	%r5 = band %r2, $255
+	%r6 = convert %r5
+	%r7 = fdiv %r6, $255.0
+	%r12 = construct %r7, %r7, %r7, $1.0
+	%r13 = construct %r12
+	return %r13
+
+fn @noise::hash(u32) -> u32 internal
+%bb0(%r1):
+	%r4 = imul %r1, $747796405
+	%r5 = iadd %r4, $2891336453
+	%r6 = call @bits::fold, %r5
+	return %r6
+
+fn @bits::fold(u32) -> u32 import
+```
+
+The shader here was linked with `noise` but not with `bits`.
+</script>
+</body>
+</html>

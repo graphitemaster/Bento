@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Tools · Bento</title>
+	<meta name="description" content="Bento command line tools: compiler, linker, optimizer, code generator, disassembler, validator, stripper, and language server.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Tools
+
+bento-c
+: Compiler from source to bytecode. The syntax tree, the IR, or generated code is printed on request.
+bento-link
+: Linker for modules. Imports that no given module exports are left for a later link.
+bento-opt
+: Optimizer with every pass and a count of the changes made by each.
+bento-llc
+: Code generator for SPIR-V, AIR, GLSL, and C source that rebuilds the module through the library.
+bento-dis
+: Disassembler from bytecode to IR text.
+bento-val
+: Validator for modules. Only the first problem in a module is reported.
+bento-strip
+: Stripper for the file table and every location.
+bento-lsp
+: Language server for diagnostics, hover, definitions, and outlines.
+
+`-` in place of any file means stdin or stdout. Every tool prints its options with `--help`. The exit status is 0 on success, 1 after a reported failure, and 2 for a bad command line.
+
+## Example with two modules
+
+Library module with a constant and two exported functions:
+
+```bento tone.bento
+/// Tone mapping, shared by every post pass.
+module tone;
+
+import std;
+
+/// Rec. 709 luma weights.
+export const LUMA = f32x3 { 0.2126, 0.7152, 0.0722 };
+
+export fn luma(c: f32x3) -> f32 {
+	return std::dot(c, LUMA);
+}
+
+/// Narkowicz's fit of the ACES filmic curve.
+export fn aces(x: f32x3) -> f32x3 {
+	let a = x * (x * 2.51 + 0.03);
+	let b = x * (x * 2.43 + 0.59) + 0.14;
+	return std::clamp(a / b, f32x3 { 0, 0, 0 }, f32x3 { 1, 1, 1 });
+}
+```
+
+The shader imports `tone` and has two entry points: a compute shader for grading a buffer of pixels and a fragment shader for drawing in gray.
+
+```bento post.bento
+import std;
+import tone;
+
+struct Frame {
+	[[storage(0)]] pixels: []f32x4,
+	[[constant(1)]] exposure: f32,
+}
+
+[[stage(.Compute), workgroup_size(64)]]
+fn grade(cs: Frame) with (t: Thread) {
+	let c = cs.pixels[t.global.x];
+	cs.pixels[t.global.x] = f32x4 { ...tone::aces(c.rgb * cs.exposure), c.a };
+}
+
+struct Input {
+	[[location(0)]] color: f32x3,
+}
+
+struct Output {
+	[[color(0)]] color: f32x4,
+}
+
+[[stage(.Fragment)]]
+fn gray(fs: Input) -> Output {
+	let y = std::sqrt(tone::luma(fs.color));
+	return { f32x4 { y, y, y, 1.0 } };
+}
+```
+
+### Compiling
+
+Each module is compiled alone against the bytecode of the modules it imports. Imports are found as `name.bbc` in the current directory or along each `-i` path.
+
+```sh
+bento-c tone.bento
+bento-c post.bento
+```
+
+Code is not generated for a module with unresolved imports:
+
+```text bento-llc post.bbc --entry=gray
+post.bbc: error: 'tone::luma' is imported and cannot be called until the module that exports it is linked
+```
+
+### Linking
+
+```sh
+bento-link -o program.bbc post.bbc tone.bbc std.bbc
+```
+
+Names are prefixed with the module name. Structs and enums merge by qualified name and must match. Importers have to be compiled again when an export they were compiled against now allows fewer stages or needs more uniform regions.
+
+### Optimizing
+
+```sh
+bento-opt program.bbc -o opt.bbc
+```
+
+Counts of changes go to stderr and stdout stays free for a pipe.
+
+### Generating code
+
+```sh
+bento-llc opt.bbc --entry=grade -o grade.comp
+bento-llc opt.bbc --entry=gray -o gray.frag
+bento-llc opt.bbc --target=spirv --env=vulkan1.3 --entry=grade -o grade.spv
+bento-llc opt.bbc --target=air --env=ios17 --entry=grade -o grade.metallib
+```
+
+::: note
+No file is written when generation fails.
+:::
+
+### Checking, inspecting, and stripping
+
+```sh
+bento-val tone.bbc post.bbc program.bbc opt.bbc
+bento-dis opt.bbc -o -
+bento-strip opt.bbc -o ship.bbc
+```
+
+### Pipes
+
+The same steps through pipes give byte-identical output:
+
+```sh
+bento-c post.bento -o - | bento-link - tone.bbc -o - | bento-opt - -o - | bento-llc - --entry=gray
+```
+
+## Diagnostics
+
+Every parse and type error in a file is reported in one run with a line and column. Unknown names get a hint for the qualified name of an import or for the closest name of the same kind:
+
+```text
+hint.bento:3:38: error: unknown function 'sqrt' and the name 'std::sqrt' is imported
+hint.bento:4:37: error: unknown function 'std::normalise' and the closest function is 'std::normalize'
+```
+
+## Editor support
+
+VS Code and Sublime Text share one TextMate grammar for syntax highlighting. Both work with `bento-lsp` as an option on top:
+
+| Editor | Package | Language server |
+| --- | --- | --- |
+| VS Code | `editors/vscode` | through the extension |
+| Sublime Text | `editors/sublime` | through the LSP package |
+
+The diagnostics of `bento-c` are published by `bento-lsp` on every change. Hover shows the type and the `///` doc comment of a declaration. Go to definition and the document outline are supported. Setup for each editor is described in the README of its package.
+
+::: note
+The Sublime Text package is generated from the VS Code grammar by `tools/sublime.py`.
+:::
+</script>
+</body>
+</html>

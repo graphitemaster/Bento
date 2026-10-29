@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Bento Shader Compiler Infrastructure</title>
+	<meta name="description" content="Bento: a shading language and shader compiler infrastructure for building shaders and shader tools. The whole infrastructure is one C library with no dependencies.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+
+<main class="home">
+<div class="wrap">
+
+<div class="hero">
+	<div class="pitch">
+	<h1>A shading language and shader compiler infrastructure for building shaders and shader tools.</h1>
+	<p class="lede">Bento compiles to its own IR and lowers that directly to what your graphics API requires. The whole infrastructure is one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
+	</div>
+	<svg class="still" viewBox="0 -24 370 320" aria-hidden="true">
+		<defs>
+			<linearGradient id="hashi" gradientUnits="userSpaceOnUse" x1="0" x2="165">
+				<stop offset="0" stop-color="#d8b585"/>
+				<stop offset="0.7" stop-color="#c49a68"/>
+				<stop offset="0.705" stop-color="#4a1f12"/>
+				<stop offset="1" stop-color="#2b120b"/>
+			</linearGradient>
+			<filter id="lift" x="-20%" y="-20%" width="140%" height="160%">
+				<feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity="0.55"/>
+			</filter>
+		</defs>
+		<rect x="30" y="118" width="250" height="172" rx="6" fill="#0e0b09" stroke="#c2401d" stroke-width="6"/>
+		<rect x="41" y="129" width="132" height="150" rx="2" fill="#ede6d8"/>
+		<rect x="181" y="129" width="88" height="71" rx="2" fill="#ebbb4a"/>
+		<rect x="181" y="208" width="88" height="71" rx="2" fill="#e8603f"/>
+		<g transform="translate(209 104) rotate(-33)" filter="url(#lift)">
+			<rect x="2" y="-12" width="34" height="24" rx="2" fill="#ebbb4a"/>
+			<polygon points="0,-15 165,-26 165,-17 0,-12" fill="url(#hashi)"/>
+			<polygon points="0,12 165,17 165,26 0,15" fill="url(#hashi)"/>
+		</g>
+	</svg>
+</div>
+
+<div class="section-head" id="example">
+	<h2>Example</h2>
+	<p>Fragment shader with a struct of inputs and a struct of outputs. Each field is bound through an attribute.</p>
+</div>
+<div class="tray">
+	<figure class="cell full">
+		<figcaption>hello.bento</figcaption>
+<pre data-lang="bento">import std;
+
+struct Pixel {
+	[[location(0)]] uv: f32x2,
+}
+
+struct Color {
+	[[color(0)]] rgba: f32x4,
+}
+
+[[stage(.Fragment)]]
+fn main(px: Pixel) -&gt; Color {
+	let corner = px.uv.x * px.uv.y;
+	let glow = std::smooth_step(0.0, 1.0, corner);
+	return { f32x4 { px.uv, glow, 1.0 } };
+}</pre>
+	</figure>
+	<figure class="cell full">
+		<figcaption>compiled to bytecode, then to GLSL or SPIR-V</figcaption>
+<pre data-lang="sh">bento-c hello.bento
+bento-llc hello.bbc
+bento-llc --target=spirv hello.bbc</pre>
+	</figure>
+</div>
+
+<div class="section-head" id="language">
+	<h2>Language</h2>
+	<p>Barriers, subgroups, and uniformity are concepts built into the language rather than thinly typed intrinsics bolted onto C. <a href="language.html">Language tour</a></p>
+</div>
+<div class="tray">
+	<div class="cell wide">
+		<h3>Uniformity analysis</h3>
+		<p>How widely every value is shared is proven during compilation for every rung from the whole dispatch down to one thread. Derivatives, simdgroup operations, and bindless indices are checked against it.</p>
+	</div>
+	<div class="cell">
+		<h3>Automatic barriers</h3>
+		<p>Wherever workgroup memory written by one thread is read by another, a barrier is inserted in uniform code before the read.</p>
+	</div>
+	<div class="cell">
+		<h3>Context parameters</h3>
+		<p>Built-in values such as the thread id, and values defined in the shader, are available at any depth of the call chain through checked <code>with</code> clauses. There are no globals and no parameters passed by hand.</p>
+	</div>
+	<div class="cell">
+		<h3>Generics</h3>
+		<p>Bracket parameters with built-in bounds and structural interfaces. Generics are type checked once and can be exported through bytecode.</p>
+	</div>
+	<div class="cell">
+		<h3>Compile-time code</h3>
+		<p>Under the type checker, code is selected with <code>const if</code> and unrolled with <code>const for</code>. Modules and a linker are used in place of <code>#include</code>.</p>
+	</div>
+	<div class="cell full">
+		<h3>Memory spaces</h3>
+		<p>Every reference type includes the memory space: <code>&amp;thread</code>, <code>&amp;workgroup</code>, <code>&amp;storage</code>, or <code>&amp;constant</code>. Buffers and workgroup memory can be passed to functions on every target.</p>
+	</div>
+</div>
+
+<div class="section-head" id="toolchain">
+	<h2>Infrastructure</h2>
+	<p>An IR and a set of language agnostic tools that work on it. The Bento language and compiler are a small client on top of all that, kind of like how clang is the C/C++ frontend for LLVM. <a href="toolchain.html">Tools</a>, <a href="ir.html">IR and bytecode</a>, <a href="library.html">Library</a></p>
+</div>
+<div class="tray">
+	<div class="cell">
+		<h3>Structured SSA</h3>
+		<p>Blocks belong to <code>if</code> and loop instructions rather than to a control flow graph. IR can be built, edited, printed, and verified from other programs.</p>
+	</div>
+	<div class="cell">
+		<h3>Bytecode</h3>
+		<p>Modules can be linked at build time or at run time, left incomplete, and mixed with IR from any source.</p>
+	</div>
+	<div class="cell">
+		<h3>Tools</h3>
+		<p>Compiler, linker, optimizer, code generator, disassembler, validator, stripper, and language server.</p>
+	</div>
+	<div class="cell wide">
+		<h3>Optimizer</h3>
+		<p>Inlining, mem2reg, scalar replacement of aggregates, folding, if-conversion, CSE, dead store and redundant load elimination, aggressive dead code elimination, and load narrowing. Comprehensive rule-driven algebraic simplifications.</p>
+	</div>
+	<div class="cell">
+		<h3>Library</h3>
+		<p>One C header. Memory, files, and diagnostics are provided by the host through callbacks.</p>
+	</div>
+	<div class="cell full">
+		<h3>Untrusted input</h3>
+		<p>No source or bytecode can crash the library, hang it, or cause out of memory without being reported and gracefully handled. If you can provide an input that proves otherwise, it's worth up to $500 USD as part of our <a href="bounty.html">bug bounty program</a>.</p>
+	</div>
+</div>
+
+<div class="section-head" id="compare">
+	<h2>Comparison with GLSL, HLSL, and WGSL</h2>
+</div>
+<div class="tray">
+	<div class="cell full">
+		<div class="table">
+		<table>
+			<thead>
+				<tr><th></th><th>Bento</th><th>GLSL, HLSL, WGSL</th></tr>
+			</thead>
+			<tbody>
+				<tr><td>Output</td><td>Lowered straight to SPIR-V, AIR, or GLSL</td><td>glslang, DXC, Tint, or a transpiler in between</td></tr>
+				<tr><td>Reuse</td><td>Modules, imports, and a linker</td><td><code>#include</code></td></tr>
+				<tr><td>Variants</td><td>Type checked <code>const if</code>, <code>const for</code>, and generics</td><td>Preprocessor macros</td></tr>
+				<tr><td>Uniformity</td><td>Proven for every value and checked across modules</td><td>Unchecked in GLSL and HLSL but checked for derivatives and barriers in WGSL</td></tr>
+				<tr><td>Barriers</td><td>Inserted automatically</td><td>Written by hand</td></tr>
+				<tr><td>Built-ins</td><td>Context parameters checked per stage</td><td>Globals or semantics</td></tr>
+				<tr><td>Buffers in functions</td><td>References with a memory space</td><td>Not allowed in GLSL</td></tr>
+				<tr><td>Results</td><td>Multiple return values</td><td><code>out</code> parameters</td></tr>
+				<tr><td>Embedding</td><td>One C library without dependencies</td><td>Large C++ code bases</td></tr>
+				<tr><td>Access</td><td>Every stage public, down to the IR</td><td>Source in, code out</td></tr>
+			</tbody>
+		</table>
+		</div>
+	</div>
+</div>
+
+<div class="section-head" id="rationale">
+	<h2>Rationale</h2>
+</div>
+<div class="tray">
+	<div class="cell full">
+		<p class="quote">&ldquo;The shader situation in Vulkan and DX12 is somewhat dire and this is an attempt at trying to address it.&rdquo;</p>
+		<p>The <a href="why.html">rationale</a> is about the lessons from past mistakes, why Bento is not a transpiler, and why the library comes first. Status is on the <a href="roadmap.html">roadmap</a>.</p>
+	</div>
+</div>
+
+</div>
+</main>
+
+</body>
+</html>

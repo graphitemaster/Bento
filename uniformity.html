@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Uniformity · Bento</title>
+	<meta name="description" content="How widely every value is shared on the GPU is proven during compilation and used to check derivatives, simdgroup operations, barriers, and bindless indices.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Uniformity
+
+GPU threads run in groups that move in lockstep. Some operations need every thread of the group present: derivatives computed from the neighboring pixels of a quad, barriers waited on by the whole workgroup, and subgroup operations in which values are exchanged across a simdgroup. In other shading languages these rules are left to the specification and breaking one is undefined behavior or a hang. In Bento they are proven during compilation.
+
+## Ladder
+
+Every value is labeled with how widely it is shared, from the whole dispatch down to one thread:
+
+| Rung | Same for | Values from |
+| --- | --- | --- |
+| `dispatch` | every thread of the draw or dispatch | literals, constants, constant buffers, read-only storage, workgroup size and count |
+| `workgroup` | every thread of a workgroup | the workgroup id and anything computed from it and the rungs above |
+| `simdgroup` | every thread of a simdgroup | the simdgroup id and the results of simdgroup operations |
+| `partgroup` | a cluster of lanes inside a simdgroup | the results of clustered operations, sized by the cluster |
+| `thread` | one thread | thread ids, the fragment coordinate, varyings, and storage written by other threads |
+
+Derivatives require a `quadgroup`, a partgroup of four. The size of a partgroup comes from the operation that produced the value and is not written in checked code.
+
+Computed values are as uniform as the least uniform input. The workgroup id plus a constant is still workgroup uniform. Adding a thread id makes it thread varying.
+
+## Branches
+
+Under an `if` on a simdgroup uniform condition, every simdgroup stays together. At an `if` on a thread varying condition the threads split up until the end of the `if`. Everything computed inside, even a constant chosen by one arm, is thread varying.
+
+In divergent code, the rest of the function is divergent after a `return` or `discard` and the rest of the loop after a `break` or `continue`. Threads reconverge at the end of every `if` and loop.
+
+## Requirements
+
+| Operation | Needs |
+| --- | --- |
+| Derivatives and sampling with an implicit level of detail | a `quadgroup` or better, in a fragment shader |
+| Simdgroup operations | a `simdgroup` or better |
+| Barriers | a point in `workgroup` uniform code |
+| Indices into arrays of textures and bindless handles | `dispatch` uniform, or else `NonUniform` on Vulkan and an error on GL |
+
+Requirements are checked through calls at any depth.
+
+## Uniformity qualifiers
+
+Without a qualifier, `if` and `for` get the rung proven for the condition. Uniformity qualifiers in front of them are checked claims:
+
+- `workgroup if`, `simdgroup if`, `partgroup if`, and `quadgroup if` are an error when the condition cannot be shown to be that widely shared.
+- `thread if` is always allowed and marks where the threads split up.
+- `else if` arms use the qualifier of the first `if` in the chain.
+
+```bento edges.bento
+import std;
+
+struct Material {
+	tint: f32x4,
+}
+
+struct Surface {
+	[[constant(0)]] material: Material,
+	[[location(0)]] uv: f32x2,
+}
+
+struct Shaded {
+	[[color(0)]] color: f32x4,
+}
+
+[[stage(.Fragment)]]
+fn edges(fs: Surface) -> Shaded {
+	let edge = std::fwidth(fs.uv.x);
+	if fs.material.tint.a > 0.5 {
+		edge += std::fwidth(fs.uv.y);
+	}
+	thread if fs.uv.x > 0.5 {
+		edge += std::dpdx(fs.uv.x);
+	}
+	return { f32x4 { edge, edge, edge, 1 } };
+}
+```
+
+```text bento-c edges.bento
+edges.bento:23:11: error: derivatives cannot be used where threads diverge and require at least quadgroup uniformity
+```
+
+The first `if` tests a constant buffer and is dispatch uniform without a qualifier. Inside the second, the pixels of a quad have split up and no neighbors are left for the derivative. Without the qualifier, the second `if` is rejected the same way.
+
+## Unchecked promises
+
+Some facts cannot be seen in the shader, such as a buffer filled by the host with the same value everywhere. With `[[assume]]`, claims become unchecked promises:
+
+```bento
+[[assume]] quadgroup if fs.flags[tile] != 0 {
+	edge += std::dpdx(fs.uv.x);
+}
+
+[[assume(8)]] partgroup if cell.mask == 0 {
+	...
+}
+```
+
+Promised `partgroup` claims give the size explicitly, as in `[[assume(8)]]`. Broadcasting a value across a simdgroup makes it simdgroup uniform without any promise and is preferred where possible.
+
+## Functions and modules
+
+Every function is tagged with a scope and stages when it is checked. The scope is the least uniform place a call may be in. Functions with a derivative on a path without earlier divergence need a quadgroup. Functions that diverge and reconverge before returning can be called anywhere. The stages are the entry stages a function can be called from. They are narrowed to fragment by derivatives in the function or in anything it calls.
+
+Calls into an imported module are checked against tags stored in the bytecode instead of the bodies. In the IR the tags are printed after the signature:
+
+```ir
+fn @edge(f32) -> f32 internal simdgroup for Fragment
+%bb0(%r1):
+	%r4 = fwidth %r1
+	return %r4
+```
+
+Misuse is reported at the call:
+
+```text
+error: 'edge' cannot be called where threads diverge and requires at least quadgroup uniformity for the derivatives it depends on
+error: 'edge' cannot be called from a '.Compute' entry point and is only allowed in fragment shaders
+```
+
+The tags are checked again during verification and linking. Vertex shaders compiled against a version of `edges` without derivatives cannot be linked with a newer version in which `edge` has one:
+
+```text bento-link place.bbc edges.bbc std.bbc
+error: 'edges' exports 'edge' for fewer stages or more uniform regions than an importer was compiled against and that importer has to be recompiled
+```
+
+## Barriers
+
+Wherever workgroup memory written by one thread is read by another, a barrier is inserted at a point where the whole workgroup is still together. When there is no such point, a branch is split to make one. With no barriers written by hand, none can end up in divergent code.
+</script>
+</body>
+</html>

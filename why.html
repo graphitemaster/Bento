@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Why Bento</title>
+	<meta name="description" content="Why Bento exists: a shading language that understands the GPU, and shader compiler infrastructure that lowers straight to what your graphics API requires.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Why Bento
+
+The shader situation in Vulkan and DX12 is somewhat dire and this is an attempt at trying to address it. This is a shading language and shader compiler infrastructure for building shaders and tools.
+
+The Bento language is a fresh take on what a shading language could look like if we got to start over and actually learnt from past mistakes. Not just mistakes in shading languages, but in programming languages in general. Such as grammars that aren't context-free or the awful mistake that is the C preprocessor.
+
+What's frustrating about shading languages today is how little of the GPU is actually reflected in the language design. Barriers, subgroup ops, and plenty more end up as thinly typed intrinsics bolted onto an old C-derived language. Bento treats them as real concepts the language understands, without sacrificing the low-level control.
+
+But the language is only half of what Bento actually is.
+
+Bento doesn't transpile to GLSL/HLSL/MSL to have another compiler deal with it. It compiles to its own IR and lowers that directly to what your graphics API requires. SPIR-V for Vulkan and OpenGL, AIR for Metal (which is pretty much LLVM IR), and maybe DXIL. Since D3D12 is moving to SPIR-V anyway, a DXIL backend may not be worth the bother. The only source it does emit is GLSL as a fallback for GL drivers without SPIR-V support. Yet another transpiler was never the plan because that's arguably where the prior art went wrong.
+
+It's built a lot like LLVM. There's an IR and a set of language-agnostic tools that work on it: a disassembler, linker, bitcode compiler, optimizer, stripper, and validator. The optimizer has way too many passes to list here, is competitive with spirv-opt, and is still being improved. The Bento language and compiler are just a small client on top of all that, much like clang is the C/C++ frontend for LLVM.
+
+You can use those tools from the command line today, but that's just one way in. Everything is available in the library itself, which ships as a single-header C library (around 30k lines right now) or as a regular library if you'd rather. It's meant to be easy to vendor and something you can get creative with, whether that's building your own languages and tools or emitting shaders straight from a node graph or material editor. Nothing else really seems to offer that. You can pull in one of the big existing toolchains with all its dependencies and bend it to your will, but they were never designed for that. They're pretty invasive and not something you'd want to sandbox or run on untrusted input.
+
+The IR is also flexible. Modules can be linked at runtime and IR can be left incomplete, then patched and linked however you want. Mix shaders compiled from source with generated ones or even with ones compiled offline. It's meant to be a stable, portable, and safe delivery format and not just an intermediate step you throw away.
+
+And if all the infrastructure stuff isn't for you, just use Bento the shading language. Start there and get more creative later if you want.
+</script>
+</body>
+</html>

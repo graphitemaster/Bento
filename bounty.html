@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Bug bounty · Bento</title>
+	<meta name="description" content="Bento is safe on untrusted source and bytecode. Any input that crashes it, hangs it, or slips past an out of memory report is worth up to $500 USD.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Bug bounty
+
+No `.bento` file and no `.bbc` image can crash Bento, hang it, or cause out of memory without being reported and gracefully handled. We say Bento is production ready and safe on untrusted input. If you can provide an input that proves otherwise, it's worth up to $500 USD as part of our bug bounty program.
+
+## What counts
+
+Issues are inputs that cause one of these:
+
+Crash
+: The process dies with a segmentation fault or another fatal signal from a stack overflow, an integer division by zero, a read or write out of bounds, or a null pointer dereference.
+
+Denial of service
+: Time that grows quadratically or exponentially with the size of the input, or a loop that never ends. Everything in Bento is bounded.
+
+Out of memory
+: Failed allocations that crash the compiler or go unreported. Everything that can run out of memory is handled and reported to the host as `BTO_STATUS_OOM`.
+
+Anything within the spirit of these rules
+: Inputs that break the safety of Bento on untrusted input in any other way.
+
+::: note
+Inputs refused for passing a limit are working as designed.
+:::
+
+## In scope
+
+- Any source given to `bento-c`, the language server, or the library.
+- Any bytecode given to a tool or loaded through the library.
+- The current source, built with the default limits in `bto_config.h` and run on a thread with at least 1 MiB of stack.
+
+## Out of scope
+
+- Misuse of the C API, such as a bad pointer or a pass run on a module that was never verified.
+- Host callbacks that break the contract of an allocator, a file system, or a reporter.
+- The JSON protocol of the language server and the command line arguments of the tools.
+- Output that a driver or another compiler rejects or mishandles.
+- Builds with changed limits or changed source.
+
+::: note
+Wrong code is still a bug worth reporting outside the bounty.
+:::
+
+## Reporting
+
+Reports are public. There is no private channel and no embargo. We are sure enough of Bento to accept every report in the open. Report it on [GitHub Issues](ISSUES_URL) and include:
+
+- the input that sets it off,
+- the tool and its flags, or the library calls,
+- the platform, the compiler, and the build flags,
+- what happened: the signal or the sanitizer report, the time it took, or the allocation that went unreported.
+
+Each issue pays up to $500 USD. Several inputs that hit the same bug are one issue and pay once, to the first reporter on the public issue tracker.
+
+## Safeguards
+
+- Everything that grows with the input has an upper limit, documented in `bto_config.h`. Pathological inputs are stopped at a limit with an error.
+- Algorithms are chosen to stay clear of quadratic and exponential behaviour. Where growth is still possible, as when inlining functions that each call the next one twice, it is capped.
+- Every stage is fuzzed with libFuzzer under AddressSanitizer and UndefinedBehaviorSanitizer inside a fixed memory budget. Modules the verifier accepts then go through everything after it and have to verify again after each pass and each link.
+- Every allocation of a full build is failed in turn by a test. Every run has to report the failure once, return `BTO_STATUS_OOM`, and leak nothing.
+- The test suite also runs under both sanitizers.
+</script>
+</body>
+</html>

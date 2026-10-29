@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Library · Bento</title>
+	<meta name="description" content="The Bento library: a single header of C with no dependencies, every stage public, and safe on untrusted input.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Library
+
+## Host interface
+
+Bento depends on nothing, not even the freestanding C headers. It can be compiled with `-nostdinc` and for WebAssembly. Memory, files, and diagnostics are provided by the host through tables of callbacks.
+
+BTOAllocator
+: `allocate`, `reallocate`, and `deallocate`. The alignment is passed to each and the old size to the last two. Simple allocators need no records.
+BTOFilesystem
+: `open`, `close`, `read`, `write`, and `abspath`. It is optional and is used for nothing but absolute source paths in diagnostics.
+BTOReporter
+: `display` is called with each diagnostic as it is reported.
+
+There is no mutable global state: every table in the library is a `static const` and all state is in the context and in objects owned by the host. Every file is compiled without warnings as C11 and as C++11 under `-Wall -Wextra -pedantic`.
+
+## Compiling at run time
+
+Complete program compiling a source string to GLSL or SPIR-V in a buffer:
+
+```c embed.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define BENTO_IMPLEMENTATION
+#include "bento.h"
+
+static const char SOURCE[] =
+	"struct In { [[location(0)]] uv: f32x2 }\n"
+	"struct Out { [[color(0)]] color: f32x4 }\n"
+	"\n"
+	"[[stage(.Fragment)]]\n"
+	"fn main(fs: In) -> Out {\n"
+	"\tlet cell = (fs.uv * 8.0) as i32x2;\n"
+	"\tlet odd = (cell.x + cell.y) & 1;\n"
+	"\treturn { f32x4 { ...fs.uv, odd as f32, 1.0 } };\n"
+	"}\n";
+
+static void* allocate(void* user, BTOLength size, BTOLength align) {
+	(void)user;
+	return align <= 16 ? malloc(size ? size : 1) : NULL;
+}
+
+static void* reallocate(void* user, void* data, BTOLength old_size,
+                        BTOLength size, BTOLength align) {
+	(void)user, (void)old_size;
+	return align <= 16 ? realloc(data, size ? size : 1) : NULL;
+}
+
+static void deallocate(void* user, void* data, BTOLength size,
+                       BTOLength align) {
+	(void)user, (void)size, (void)align;
+	free(data);
+}
+
+static void display(void* user, const BTODiagnostic* d) {
+	const BTOString kind = bto_diagnostic_kind_name(d->kind);
+	(void)user;
+	if (d->line != 0)
+		fprintf(stderr, "%.*s:%u:%u: ", (int)d->file.length,
+			(const char*)d->file.data, d->line, d->column);
+	fprintf(stderr, "%.*s: %.*s\n", (int)kind.length, (const char*)kind.data,
+		(int)d->message.length, (const char*)d->message.data);
+}
+
+int main(int argc, char** argv) {
+	const char* const target = argc > 1 ? argv[1] : "GLSL";
+	const BTOAllocator heap = { allocate, reallocate, deallocate, NULL };
+	const BTOSystem system = { NULL, &heap };
+	const BTOReporter reporter = { display, NULL };
+	BTOContext context;
+	BTOParser parser;
+	BTOAST ast;
+	BTOIRModule module;
+	BTOOptStats stats;
+	BTOBufferStream out;
+	BTOString code = { NULL, 0 };
+
+	bto_context_init(&context, &system, &reporter);
+	bto_ast_init(&ast, &context);
+	bto_ir_module_init(&module, &context);
+	bto_parse_init(&parser, &ast, 0);
+	bto_buffer_stream_init(&out, &heap);
+
+	BTOGenOptions options = bto_gen_default_options();
+	options.entry = BTO_STRING("main");
+
+	BTOStatus status = bto_parse(&parser, BTO_STRING("checker.bento"),
+		BTO_STRING(SOURCE), &context);
+	if (status == BTO_STATUS_OK)
+		status = bto_sema(&ast, NULL, 0, &module, 0, &context);
+	if (status == BTO_STATUS_OK)
+		status = bto_ir_verify(&module, &context);
+	if (status == BTO_STATUS_OK)
+		status = bto_opt(&module, BTO_OPT_ALL, &stats, &context);
+	if (status == BTO_STATUS_OK)
+		status = bto_gen(bto_string_make((BTOUint8*)target, strlen(target)),
+			&module, &options, &out.stream, &context);
+	if (status == BTO_STATUS_OK)
+		status = bto_buffer_stream_result(&out, &code);
+	if (status == BTO_STATUS_OK)
+		fwrite(code.data, 1, code.length, stdout);
+
+	bto_buffer_stream_fini(&out);
+	bto_ir_module_fini(&module);
+	bto_ast_fini(&ast);
+	bto_context_fini(&context);
+	return status == BTO_STATUS_OK ? 0 : 1;
+}
+```
+
+```sh
+cc -std=c11 -Wall -Wextra -pedantic embed.c -o embed
+./embed SPIRV > checker.spv
+```
+
+## Public stages
+
+| Stage | Entry points |
+| --- | --- |
+| Context | `bto_context_init`, `bto_context_fini`, `bto_acquire_scratch`, `bto_release_scratch` |
+| Lexer | `bto_lex_init`, `bto_lex_next` |
+| Parser | `bto_parse_init`, `bto_parse`, `bto_ast_print`, `bto_ast_find` |
+| Checker | `bto_sema` to check and lower to IR, `bto_lower` for a tree checked another way |
+| IR | `bto_ir_module_init`, the builder, the editor, `bto_ir_print`, `bto_ir_strip` |
+| Bytecode | `bto_ir_image_write`, `bto_ir_image_read` |
+| Verifier | `bto_ir_verify` |
+| Linker | `bto_link` |
+| Optimizer | `bto_opt` and each pass separately |
+| Generators | `bto_gen` and each target separately |
+| Streams | memory, file, and growing buffer streams |
+
+Imports are modules in memory. Prebuilt modules such as `std.bbc` are read by the host, loaded with `bto_ir_image_read`, verified, and passed to `bto_sema` as imports of a shader compiled at run time. The two are then linked with `bto_link`, optimized, and generated as above.
+
+## Memory
+
+Each AST and each IR module has a separate arena and is freed in one call. The IR contains no pointers into the AST or the source. Working memory is acquired from scratch arenas of the context with `bto_acquire_scratch` and given back with `bto_release_scratch`. `bto_context_fini` returns false when a scratch arena was never given back. In the program above, no new allocations are made while verifying, optimizing, and writing GLSL.
+
+Running out of memory is an ordinary error. The first failed allocation is reported once and every stage returns `BTO_STATUS_OOM` from then on. When every allocation of a full build is failed in turn, one run at a time, each run ends cleanly without leaks.
+
+## Untrusted input
+
+No source and no bytecode may crash the library, hang it, or exhaust the memory.
+
+- Nesting depth and the height of the tree built from long chains of operators, calls, and `else if` arms are limited during parsing. Exceeding either is an error rather than a stack overflow.
+- Every offset, length, and alignment in an image is checked before any of them is trusted.
+- No pass or generator is run on a module until it is verified.
+- Every loop over input is bounded and every allocation is checked.
+
+`make -C tests fuzz` builds a libFuzzer harness over the lexer, the parser, the checker, and the bytecode reader. Bytecode accepted by the verifier is put through every pass, the linker, and every generator and has to pass verification again. Inside the fuzzer, the library runs under a fixed memory budget and huge requests fail inside Bento.
+
+Inputs that crash the library, hang it, or slip past an out of memory report are worth up to $500 USD under the [bug bounty](bounty.html).
+
+## Single header
+
+The single header `bento.h` is generated with `make unified` and follows the stb convention. The API is declared wherever the header is included but the implementation is compiled into exactly one file by defining `BENTO_IMPLEMENTATION` before the include.
+
+::: note
+Other build options are documented in the Makefile.
+:::
+</script>
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>IR Reference · Bento</title>
+	<meta name="description" content="Reference for the Bento IR: the printed form of modules and functions, types, values, structured control flow, and every instruction with its operands and result.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# IR reference
+
+The IR as printed by `bento-dis`. The printed form leaves out result types, which follow from the operands or from the declaration of what is used.
+
+## Modules
+
+A module is printed as a header followed by its globals and functions:
+
+```ir bento-dis shade.bbc
+module shade
+file 0 "shade.bento" "/src/shade.bento" 83732ed648050a5a007ce369fd87c2b8f06e77966ab6b291a774efa014b65e27
+import std
+type Light = struct Light { direction: f32x3, color: f32x3 } file 0
+
+global @STEPS: [4]f32 constant export file 0 = $0x1p-2, $0x1p-1, $0x1.8p-1, $1.0
+
+fn @lit(Light, f32x3) -> f32x3 export file 0
+%bb0(%r1, %r2):
+	%r7 = extract %r1, $0
+	%r8 = fdot %r2, %r7
+	%r9 = fmax %r8, $0.0
+	%r12 = extract %r1, $1
+	%r13 = global @STEPS
+	%r15 = fmul %r9, $3.0
+	%r16 = convert %r15
+	%r17 = access %r13, %r16
+	%r18 = load %r17
+	%r19 = fmul %r12, %r18
+	return %r19
+```
+
+| Line | Meaning |
+| --- | --- |
+| `module name` | Name of the module. Programs have none. |
+| `file n "name" "path" digest` | Source file `n` with the SHA-256 digest of its text. `bento-strip` removes the file table. |
+| `import name` | Module whose exports this one uses. |
+| `type Name = …` | Exported type, as a struct with its fields, an enum with its values, or any other type. |
+| `global @name: T storage linkage` | Global in `constant` or `workgroup` memory. Constant globals end with their data as `= $…`, every scalar in order and matrices column by column. |
+| `fn @name(…) -> R …` | Function, followed by its body unless it is imported. |
+
+Names of other modules are qualified, as in `@noise::hash`. Overloads after the first print with a number, as in `@mix.1`.
+
+## Functions
+
+```ir
+fn @tint(location 0 Flat u32) -> Out [color 0] export Fragment
+fn @main(storage 0 &storage []f32x4, constant 1 &constant f32) -> () export Compute 64 1 1
+fn @fold(u32) -> u32 import
+fn @sin[T: Float, N: u32]([vector; N]T) -> [vector; N]T export opcode 40
+fn @lerp[f32, 4](f32x4, f32x4, f32) -> f32x4 internal
+template @lerp[T: Float, N: u32]([vector; N]T, [vector; N]T, T) -> [vector; N]T export
+```
+
+The signature lists the generic parameters or the arguments of an instance, the parameter types, and the result, then:
+
+| Part | Meaning |
+| --- | --- |
+| `[T: Float, N: u32]` after the name | Generic parameters of a prototype or template: types with a bound of `Number`, `Integer`, `Signed`, or `Float`, or `u32` counts. |
+| `[f32, 4]` after the name | Arguments of an instance of the template with the same name. Instances of an imported template have no body until linked. |
+| binding before a parameter | Input of an entry point, as in `location 0 Flat`. |
+| `[…]` after the result | Bindings of the fields of the result of an entry point. |
+| `internal`, `export`, `import` | Linkage. Imported functions have no body. |
+| `Vertex`, `Fragment`, `Compute x y z` | Stage of an entry point, with the workgroup size for compute. |
+| `early_depth_test` | Fragment entry point that runs the depth test first. |
+| `dispatch`, `workgroup`, `simdgroup` | Least uniform region the function may be called from. Missing means `thread`. |
+| `for Vertex,Fragment` | Stages the function may be called from. Missing means every stage. |
+| `opcode n` | Primitive. Calls become instruction `n` on the types of the call. |
+| `file n` | File the function was declared in. |
+
+Results of several values are tuples, as in `-> (f32, u32)`, and `()` is no result.
+
+Templates are generic functions with a body, listed after the functions of a module. Their types keep the parameters, and they may use three opcodes that functions may not. Passes and generators never see them.
+
+| Instruction | Meaning |
+| --- | --- |
+| `count $n` | Value of count parameter `n`, a `u32`. |
+| `call @f[T, N], a, …` | Call of the template `f` with those arguments, which may be parameters of the caller. |
+| `pick op, a, …` | Operator `op` whose opcode depends on the kind of scalar of `a`, as `pick +` is `iadd` or `fadd`. |
+
+Literals of a parameter type are kept in every form an instance can need and printed as `f32` or as an integer.
+
+### Bindings
+
+| Binding | Allowed on | Meaning |
+| --- | --- | --- |
+| `attribute n` | vertex inputs | Vertex attribute `n`. |
+| `location n` | fragment inputs, vertex outputs | Varying `n`, with `Flat` or `NoPerspective` after it unless smooth. |
+| `color n` | fragment outputs | Color attachment `n`. |
+| `storage n` | inputs | Storage buffer, as a `&storage` reference. |
+| `constant n` | inputs | Constant buffer, as a `&constant` reference. |
+| `image n` | inputs | Storage image. |
+| `sampled n` | inputs | Sampled texture. |
+| `builtin name` | outputs | `position` from a vertex entry point or `frag_depth` from a fragment entry point. |
+
+### Builtins
+
+Builtins are read with `input`.
+
+| Builtin | Type | Stages |
+| --- | --- | --- |
+| `position` | `f32x4` | fragment |
+| `vertex_index`, `instance_index` | `i32` | vertex |
+| `front_facing` | `b32` | fragment |
+| `global_invocation_id`, `local_invocation_id`, `workgroup_id`, `num_workgroups` | `u32x3` | compute |
+| `local_invocation_index`, `simdgroup_id`, `simdgroup_count` | `u32` | compute |
+| `simdgroup_lane`, `simdgroup_size` | `u32` | every stage |
+
+## Types
+
+| Type | Meaning |
+| --- | --- |
+| `b32` | Boolean, 32 bits wide in memory. |
+| `i8`, `i16`, `i32`, `i64` | Signed integers. |
+| `u8`, `u16`, `u32`, `u64` | Unsigned integers. |
+| `f16`, `f32` | Floats. |
+| `f32x4` | Vector of 2 to 4 lanes. |
+| `f32x4x3` | Matrix of 4 columns of 3 rows, of floats. |
+| `[8]T` | Array. |
+| `[]T` | Unsized array, inside buffers. |
+| `[enum; E]T` | Array indexed by the enum `E`. |
+| `Name` | Struct or enum. |
+| `(T, U)` | Tuple. `()` is the empty tuple. |
+| `fn(T) -> R` | Function. |
+| `&space T` | Reference to a `T` in `thread`, `workgroup`, `storage`, or `constant` memory. |
+| `[image; 2]f32` | Storage image of 1, 2, or 3 dimensions, or 6 for a cube. |
+| `[sampled; 2]f32` | Sampled texture. |
+| `[[4]image; 2]f32` | Layered image with 4 layers, or `[[]image; 2]f32` for any number. |
+| `[sampled; 2][4]f32` | Multisampled texture with 4 samples, or `[sampled; 2][]f32` for any number. |
+| `T`, `[vector; N]T` | Generic parameter of the function, in place of a scalar or a count. |
+
+## Blocks and values
+
+The body of a function starts with `%bb0(%r1, …)`, whose arguments are the parameters. Blocks nested in an `if` or `loop` print after it under their own labels, followed by a label for the code after the `if` or `loop`.
+
+| Form | Meaning |
+| --- | --- |
+| `%bbN` | Block. |
+| `%rN` | Value. `%r0` is none. |
+| `$…` | Literal, or a constant index or exponent at the end of an instruction. |
+| `@name` | Function or global. |
+
+Literals are operands rather than instructions and can be used anywhere in their function. Integers and enumerators print in decimal, bools as `true` or `false`, and floats with `.0` when whole or in hex otherwise, as in `$0x1.8p-1`.
+
+Fast-math flags are set per block and apply to the instructions directly in it:
+
+```ir
+%bb4 fast(nonans, noinfs, nosignedzero):
+```
+
+The flags are `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, and `nosignedzero`.
+
+## Control flow
+
+Control flow is structured. Every block ends in exactly one jump, and values are merged by PHIs at the start of a block rather than passed through jumps.
+
+| Instruction | Meaning |
+| --- | --- |
+| `if c, %bbT, %bbE` | Runs the then or the else arm on the `b32` scalar `c`. |
+| `loop %bbB` | Runs the body until it breaks. |
+| `yield %bbN` | Ends an arm of an `if` and continues after it. |
+| `break %bbN, $k` | Leaves the innermost loop by break edge `k`. |
+| `continue %bbB, $k` | Starts the next trip of the innermost loop by continue edge `k`. |
+| `return v, …` | Returns the result, or the elements of a tuple result. Entry points with outputs return the result struct. |
+| `discard` | Ends a fragment invocation without writing its outputs. |
+| `%r = phi a, b, …` | Merges a value from each edge into the block. |
+
+PHIs after an `if` have an operand for the then arm and one for the else arm. PHIs at the top of a loop body have the value from before the loop and then one for each continue edge in order. PHIs after a loop have one for each break edge in order. Operands for edges that no longer reach the block are none.
+
+The uniformity of the region an `if` or `loop` creates is printed after the opcode, as in `if.thread` or `loop.workgroup`, unless it is `simdgroup`. The rungs from most to least uniform are `dispatch`, `workgroup`, `simdgroup`, and `thread`.
+
+## Instructions
+
+Operands of arithmetic, bitwise, and logic instructions have the type of the result. Where an instruction takes two or more operands, any of them can also be a scalar of the lane type, which is spread over every lane. Signed and unsigned integers share opcodes except where the bits of the result differ.
+
+### Arithmetic
+
+| Instruction | Meaning |
+| --- | --- |
+| `iadd a, b`, `fadd a, b` | `a + b`. |
+| `isub a, b`, `fsub a, b` | `a - b`. |
+| `imul a, b`, `fmul a, b` | `a * b`, lane by lane, on matrices too. |
+| `idiv a, b`, `udiv a, b`, `fdiv a, b` | `a / b`. Integer division truncates toward zero. |
+| `irem a, b`, `urem a, b`, `frem a, b` | Remainder with the sign of `a`, as `a - b * trunc(a / b)`. |
+| `ineg a`, `fneg a` | `-a`. |
+| `imin`, `umin`, `fmin`, `imax`, `umax`, `fmax` | Smaller or larger of `a` and `b`. |
+| `iabs a`, `fabs a` | Absolute value. |
+| `fsign a` | `-1.0`, `0.0`, or `1.0` by the sign of `a`. |
+| `ffloor a`, `ftrunc a` | Rounding down and toward zero. |
+| `fma a, b, c` | `a * b + c`. |
+| `fcanonicalize a` | `a` as a float operation would return it. Left by the algebraic simplifier where an operation such as `-(-a)` is removed. |
+| `powi a, $n` | `a` multiplied by itself `n` times, with `n` at least 0. Square matrices are multiplied as matrices. |
+| `iaddc a, b` | Two results: `a + b` and the carry as 0 or 1. |
+| `isubb a, b` | Two results: `a - b` and the borrow as 0 or 1. |
+| `imule a, b`, `umule a, b` | Two results: the low and the high half of the product at twice the width. |
+
+### Math
+
+These are the functions of GLSL.std.450. Operands have the type of the result, and scalars are not spread. Floats are 16 or 32 bits wide and integers 32 bits.
+
+| Instruction | Meaning |
+| --- | --- |
+| `fround a`, `froundeven a`, `fceil a` | Rounding to nearest with halves either way, to nearest with halves to even, and up. |
+| `ffract a` | `a - ffloor a`. |
+| `isign a` | `-1`, `0`, or `1` by the sign of `a`. |
+| `fclamp x, lo, hi`, `uclamp x, lo, hi`, `iclamp x, lo, hi` | `x` limited to `lo` through `hi`. |
+| `fmix a, b, t` | `a * (1 - t) + b * t`. |
+| `fstep edge, x` | `0.0` where `x < edge` and `1.0` elsewhere. |
+| `fsmoothstep lo, hi, x` | Hermite curve from `0.0` at `lo` to `1.0` at `hi`. |
+| `fradians a`, `fdegrees a` | Degrees to radians and back. |
+| `fsin`, `fcos`, `ftan`, `fasin`, `facos`, `fatan` | Trigonometric functions and their inverses, in radians. |
+| `fsinh`, `fcosh`, `ftanh`, `fasinh`, `facosh`, `fatanh` | Hyperbolic functions and their inverses. |
+| `fatan2 y, x` | Angle of the point `(x, y)`, from `-π` to `π`. |
+| `fpow a, b` | `a` raised to `b`. |
+| `fexp a`, `fexp2 a`, `flog a`, `flog2 a` | `e` or `2` raised to `a`, and the logarithms in those bases. |
+| `fsqrt a`, `frsqrt a` | Square root and its reciprocal. |
+| `fmodf a` | Two results: the fraction and the whole part, both with the sign of `a`. |
+| `ffrexp a` | Two results: the significand from `0.5` up to `1.0` and the exponent in `i32` lanes. |
+| `fldexp a, e` | `a` times 2 raised to `e`, which has `i32` lanes. |
+| `ilsb a` | Bit number of the lowest set bit, or `-1` for zero. |
+| `imsb a`, `umsb a` | Bit number of the highest bit unlike the sign bit, or of the highest set bit. `-1` where there is none. |
+
+### Bits
+
+| Instruction | Meaning |
+| --- | --- |
+| `band a, b`, `bor a, b`, `bxor a, b`, `bnot a` | Bitwise and, or, xor, and not. |
+| `ishl a, b` | `a` shifted left by `b`. |
+| `ishr a, b`, `ushr a, b` | `a` shifted right by `b`, copying the sign bit or filling with zeros. |
+| `bfi base, insert, offset, count` | `base` with `count` bits from `offset` replaced by the low bits of `insert`. |
+| `ibfe base, offset, count`, `ubfe base, offset, count` | `count` bits of `base` from `offset`, sign or zero extended. |
+
+### Comparison and logic
+
+Comparisons give `b32` with the lanes of the wider operand. Enums are compared with the integer comparisons.
+
+| Instruction | Meaning |
+| --- | --- |
+| `ieq`, `feq`, `beq` | `a == b`. |
+| `ine`, `fne`, `bne` | `a != b`. `fne` is true when either is NaN. |
+| `ilt`, `ult`, `flt` | `a < b`. |
+| `ileq`, `uleq`, `fleq` | `a <= b`. |
+| `igt`, `ugt`, `fgt` | `a > b`. |
+| `igeq`, `ugeq`, `fgeq` | `a >= b`. |
+| `isnan`, `isinf`, `isfinite`, `isnormal` | Classification of each lane of a float. |
+| `land a, b`, `lor a, b`, `lnot a` | Logical and, or, and not on `b32`. |
+| `any v`, `all v` | Whether any or every lane of a `b32` vector is true. |
+| `select c, a, b` | `a` where `c` is true and `b` elsewhere, lane by lane. `c` is a `b32` scalar or has the lanes of the result. |
+
+### Vectors, matrices, and aggregates
+
+| Instruction | Meaning |
+| --- | --- |
+| `idot a, b`, `fdot a, b` | Dot product of two vectors. |
+| `cross a, b` | Cross product of two float vectors of 3 lanes. |
+| `mmul a, b` | Matrix product of a matrix and a vector, a vector and a matrix, or two matrices. |
+| `mtranspose m` | Transposed matrix. |
+| `mdeterminant m`, `minverse m` | Determinant and inverse of a square float matrix. |
+| `flength v`, `fdistance a, b` | Length of a float vector and distance between two points, as scalars. |
+| `fnormalize v` | `v` scaled to length 1. |
+| `ffaceforward n, i, nref` | `n` where `fdot nref, i` is negative and `-n` elsewhere. |
+| `freflect i, n` | `i` reflected about the normal `n`. |
+| `frefract i, n, eta` | `i` refracted through a surface with normal `n` and ratio of indices `eta`, a scalar. Zero for total internal reflection. |
+| `construct a, …` | Vector from scalars and vectors whose lanes add up, or matrix, array, or struct from every member in order. |
+| `extract v, $k`, `extract v, i` | Member `k` of a vector, matrix, array, or struct, or element `i` of anything but a struct. |
+| `insert v, x, $k`, `insert v, x, i` | `v` with that member replaced by `x`. |
+| `shuffle v, $wzyx` | Vector of the named lanes of `v`. |
+
+### Conversion
+
+| Instruction | Meaning |
+| --- | --- |
+| `convert a` | Value converted to the scalar type of the result, lane by lane. Vectors keep their lanes and matrices their shape. Enums convert to and from scalars. |
+| `bitcast a` | The same bits as another scalar or vector type of the same size. |
+| `packsnorm4x8 v`, `packunorm4x8 v` | `f32x4` to `u32`, each lane clamped and scaled to 8 signed or unsigned normalized bits. |
+| `packsnorm2x16 v`, `packunorm2x16 v`, `packhalf2x16 v` | `f32x2` to `u32`, each lane as 16 normalized bits or as an `f16`. |
+| `unpacksnorm4x8 w`, `unpackunorm4x8 w`, `unpacksnorm2x16 w`, `unpackunorm2x16 w`, `unpackhalf2x16 w` | `u32` back to `f32x4` or `f32x2`. |
+
+Packing puts the first lane in the lowest bits.
+
+### Memory
+
+| Instruction | Meaning |
+| --- | --- |
+| `alloca` | Local of the result type, as a `&thread` reference. |
+| `global @name` | Reference to a global, in `constant` or `workgroup` memory. |
+| `input name` | Builtin of the entry point. |
+| `access p, $k`, `access p, i` | Reference to a member or element of what `p` refers to, in the same memory. |
+| `load p` | Value behind `p`. |
+| `store p, v` | Writes `v` behind `p`, which is not in constant memory. |
+
+### Images
+
+| Instruction | Meaning |
+| --- | --- |
+| `imgload img, coord`, `imgload img, coord, sample` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are four lanes of the scalar of the image. Sampled textures are read at level 0 and cannot be cubes. |
+| `imgstore img, coord, texel`, `imgstore img, coord, texel, sample` | Writes a texel to a storage image. |
+| `layer img, $k`, `layer img, i` | One layer of a layered image. |
+
+### Derivatives
+
+| Instruction | Meaning |
+| --- | --- |
+| `dpdx a`, `dpdy a` | Derivative of a float across the pixels of a quad, horizontally or vertically. |
+| `fwidth a` | Sum of the absolute derivatives in both directions. |
+
+### Calls
+
+| Instruction | Meaning |
+| --- | --- |
+| `call @f, a, …` | Call of a function with a body or of an import. Functions with a tuple result give one value per element. |
+
+### Other
+
+| Instruction | Meaning |
+| --- | --- |
+| `undef` | Value of the result type with no defined contents. |
+| `nop` | No operation, left by passes until the block is compacted. |
+
+## Effects
+
+Every instruction is pure, convergent, or impure, and passes are written against the effect rather than the opcode. `dpdx`, `dpdy`, and `fwidth` are convergent and are not moved into or out of control flow. `store`, `imgstore`, and the control flow instructions are impure. A `call` has the effects of the callee, and calls to imports are impure. Everything else is pure.
+</script>
+</body>
+</html>

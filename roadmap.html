@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Roadmap · Bento</title>
+	<meta name="description" content="How much of the Bento design is in the code today and what is planned next.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Roadmap
+
+## Working
+
+### Language
+
+- Scalars, vectors, matrices, arrays, enumerated arrays, structs with includes, enums, aliases, and tuple results
+- Strict typing with untyped literals, the operator precedence of Go, `**`, and `as`
+- Swizzles with `0` and `1`, `.Name` selectors, and `...` spreads
+- `const`, `const if`, and `const for` inside functions
+- Overloading by parameters, results, enum selectors, and memory space
+- Generic functions with the built-in bounds and `u32` counts, inferred from the call or given with `f::[...]`, checked once, and exported through bytecode as templates that the linker instantiates
+- References with a memory space and the overlap check, and workgroup memory
+- Storage images and sampled textures with cubes, layers, and multisampling
+- Vertex, fragment, and compute entry points over structs with bindings
+- Checks of every attribute, of bindings that share a slot, and of constant shift amounts and indices
+- Uniformity qualifiers on `if` and `for`, and derivative checks through calls and across modules
+- The built-in contexts `Thread`, `WorkGroup`, `SimdGroup`, `Vertex`, and `Fragment` read through `with` clauses
+- Modules, imports, `using`, exports, and `///` doc comments
+- Hints with the closest name for unknown names, fields, and enumerators
+
+### Infrastructure
+
+- All the tools, and the library as a single header or a static library
+- IR with the builder, editor, printer, and verifier
+- Bytecode safe on untrusted input and linking with unresolved imports left for later
+- Optimizer passes and a table of algebraic rules
+- `std` as generic prototypes, two for each function
+- SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5, GLSL 4.50 and GLSL ES 3.10, and the C target
+- AIR for Metal compute, vertex, and fragment entry points with buffers, builtins, stage inputs and outputs, matrices, and control flow, for macOS, iOS, tvOS, and visionOS from Metal 3, written as a `.metallib` without LLVM
+- Out of memory reported once and returned from every stage, tested by failing every allocation in turn
+- Diagnostics in time proportional to the file, however many errors it has
+- Language server with diagnostics, hover, definitions, and outlines, and packages for VS Code and Sublime Text with one TextMate grammar
+- The [bug bounty](bounty.html)
+
+## Next
+
+- Seeded hash tables against crafted collisions
+- Uniformity analysis after mem2reg for proving the rung of every value and region. Written qualifiers become checked claims unless escaped with `[[assume]]`. The qualifiers `dispatch`, `partgroup`, and `quadgroup` are added.
+- Automatic barriers at points of proven uniformity, with branches split where no such point exists
+- Context parameters with `context` declarations and `with` blocks, whole context values, `WorkGroup.size`, and `Vertex.draw`. Built-in values move out of stage structs into the built-in contexts.
+- Generics with interfaces as constraints and length arithmetic
+
+## Later
+
+- Sampling builtins and separate textures and samplers for Vulkan
+- Bindless as eight-byte handles in buffers for descriptor indexing, Vulkan descriptor heaps, and GL bindless, and `NonUniform` decided by the uniformity analysis
+- Simdgroup operations
+- Task and mesh stages
+- Ray tracing: ray queries first, then native SPIR-V pipelines, the software lowering for OpenGL, and the pipeline sugar last
+- AIR for buffers of structs, calls and intrinsics, workgroup memory, and images
+- LICM, sinking, unrolling, and loop fusion and fission
+- Stable bytecode. Images only load into the version of Bento that wrote them, built with the same layout. The delivery format is meant to stay stable across versions and portable across machines.
+- Completion and definitions into imports in the language server, and warnings alongside errors
+</script>
+</body>
+</html>
