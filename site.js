@@ -89,31 +89,36 @@ function callee(word, text, end) {
 }
 
 function bento(text) {
-	var out = '';
+	var attribute = false;
 	var depth = 0;
-	var rules = [
+	return lex(text, [
 		[/\/\/.*|\/\*[\s\S]*?\*\//y, 'c'],
 		[/"(?:\\.|[^"\\\n])*"/y, 's'],
-		[/@\(/y, 'a'],
+		[/\[\[(?=\s*[A-Za-z_]\w*\s*(?:\(|,|\]\]))/y, function () {
+			attribute = true;
+			depth = 0;
+			return 'a';
+		}],
+		[/\]\]/y, function () {
+			if (!attribute || depth > 0) return '';
+			attribute = false;
+			return 'a';
+		}],
 		[/\.[A-Z]\w*/y, 't'],
 		[/\b(?:0x[0-9a-fA-F_]+|[0-9][0-9_]*(?:\.[0-9][0-9_]*)?(?:[eE][+-]?[0-9]+)?)\b/y, 'n'],
 		[/\b(?:true|false)\b/y, 'n'],
 		[/\b[biuf](?:8|16|32|64)(?:x[1-4](?:x[1-4])?)?\b/y, 't'],
 		[/\b[A-Za-z_]\w*\b/y, function (word, all, end) {
-			if (depth > 0) return 'a';
+			if (attribute && depth === 0) return 'a';
 			if (BENTO_KEYWORDS.test(word)) return 'k';
 			if (BENTO_TYPES.test(word) || /^[A-Z][a-z0-9]\w*$/.test(word)) return 't';
 			return callee(word, all, end);
 		}],
 		[/[()]/y, function (paren) {
-			if (depth === 0) return '';
-			depth += paren === '(' ? 1 : -1;
-			return depth === 0 ? 'a' : '';
+			if (attribute) depth += paren === '(' ? 1 : -1;
+			return '';
 		}],
-	];
-	rules[2][1] = function () { depth = 1; return 'a'; };
-	out = lex(text, rules);
-	return out;
+	]);
 }
 
 function glsl(text) {
