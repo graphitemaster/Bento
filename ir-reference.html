@@ -102,7 +102,8 @@ Literals of a parameter type are kept in every form an instance can need and pri
 | `storage n` | inputs | Storage buffer, as a `&storage` reference. |
 | `constant n` | inputs | Constant buffer, as a `&constant` reference. |
 | `image n` | inputs | Storage image. |
-| `sampled n` | inputs | Sampled texture. |
+| `texture n` | inputs | Texture or sampled texture. |
+| `sampler n` | inputs | Sampler, on Vulkan. |
 | `builtin name` | outputs | `position` from a vertex entry point or `frag_depth` from a fragment entry point. |
 
 ### Builtins
@@ -137,8 +138,10 @@ Builtins are read with `input`.
 | `&space T` | Reference to a `T` in `thread`, `workgroup`, `storage`, or `constant` memory. |
 | `[image; 2]f32` | Storage image of 1, 2, or 3 dimensions, or 6 for a cube. |
 | `[sampled; 2]f32` | Sampled texture. |
+| `[texture; 2]f32` | Texture without a sampler, in every form of a sampled texture. |
+| `sampler` | Sampler. |
 | `[[4]image; 2]f32` | Layered image with 4 layers, or `[[]image; 2]f32` for any number. |
-| `[sampled; 2][4]f32` | Multisampled texture with 4 samples, or `[sampled; 2][]f32` for any number. |
+| `[texture; 2][4]f32` | Multisampled texture with 4 samples, or `[texture; 2][]f32` for any number. Sampled textures have no samples. |
 | `T`, `[vector; N]T` | Generic parameter of the function, in place of a scalar or a count. |
 
 ## Blocks and values
@@ -305,9 +308,10 @@ Packing puts the first lane in the lowest bits.
 
 | Instruction | Meaning |
 | --- | --- |
-| `imgload img, coord`, `imgload img, coord, sample` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are four lanes of the scalar of the image. Sampled textures are read at level 0 and cannot be cubes. |
+| `imgload img, coord`, `imgload img, coord, sample` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are four lanes of the scalar of the image. Textures and sampled textures are read at level 0 and cannot be cubes. |
 | `imgstore img, coord, texel`, `imgstore img, coord, texel, sample` | Writes a texel to a storage image. |
 | `layer img, $k`, `layer img, i` | One layer of a layered image. |
+| `sampled tex, smp` | Sampled texture of the same form as the texture, joined with the sampler. |
 
 ### Derivatives
 

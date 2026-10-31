@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
 	bto_context_init(&context, &system, &reporter);
 	bto_ast_init(&ast, &context);
 	bto_ir_module_init(&module, &context);
-	bto_parse_init(&parser, &ast, 0);
+	bto_parse_init(&parser, &ast);
 	bto_buffer_stream_init(&out, &heap);
 
 	BTOGenOptions options = bto_gen_default_options();
@@ -160,7 +160,7 @@ No source and no bytecode may crash the library, hang it, or exhaust the memory.
 - No pass or generator is run on a module until it is verified.
 - Every loop over input is bounded and every allocation is checked.
 
-`make -C tests fuzz` builds a libFuzzer harness over the lexer, the parser, the checker, and the bytecode reader. Bytecode accepted by the verifier is put through every pass, the linker, and every generator and has to pass verification again. Inside the fuzzer, the library runs under a fixed memory budget and huge requests fail inside Bento.
+`make -C test fuzz` builds a libFuzzer harness over the lexer, the parser, the checker, and the bytecode reader. Bytecode accepted by the verifier is put through every pass, the linker, and every generator and has to pass verification again. Inside the fuzzer, the library runs under a fixed memory budget and huge requests fail inside Bento.
 
 Inputs that crash the library, hang it, or slip past an out of memory report are worth up to $500 USD under the [bug bounty](bounty.html).
 

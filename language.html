@@ -55,8 +55,8 @@ Structs with bindings are allowed as the parameter or result of an entry point a
 | Images | `[image; 2]f32`, `[image; 6]f32` | storage images of 1 to 3 dimensions or a cube |
 | Sampled textures | `[sampled; 2]f32` | a texture joined with a sampler |
 | Layered textures | `[[]sampled; 2]f32`, `[[8]image; 2]u32` | arrays of layers, of a known count or not |
-| Multisampled textures | `[sampled; 2][4]f32`, `[image; 2][]u32` | samples as an array in the texel type |
-| Textures and samplers | `[texture; 2]f32`, `sampler` | separate textures and samplers for Vulkan |
+| Multisampled textures | `[texture; 2][4]f32`, `[image; 2][]u32` | samples as an array in the texel type |
+| Textures and samplers | `[texture; 2]f32`, `sampler` | bound apart and joined in the shader |
 | Rays and scenes | `r32`, `r16`, `scene` | ray tracing |
 
 `f32x3` is short for `[vector; 3]f32` and `f32x4x3` for `[matrix; 4][vector; 3]f32`. The bracketed form is for sizes given by a constant or a generic parameter.
@@ -336,6 +336,17 @@ Barriers are not written by hand and are inserted before the `thread if` while t
 
 ### Images, textures, and samplers
 
+GLSL calls a texture joined with a sampler a sampler, as in `sampler2D`, and the word ends up meaning two things. Bento keeps them apart. A `sampler` is only ever a sampler object, the filtering and addressing, and is never tied to a texture. A texture joined with a sampler is a sampled texture, `[sampled; N]T`.
+
+| Bento | What it is | GLSL | Vulkan |
+| --- | --- | --- | --- |
+| `[texture; N]T` | texture data, read with `[]` | `sampler2D` on GL, read with `texelFetch` | sampled image |
+| `sampler` | sampler object | none, an error on GL | sampler |
+| `[sampled; N]T` | a texture joined with a sampler | `sampler2D` | combined image sampler |
+| `[image; N]T` | storage image | `image2D` | storage image |
+
+A sampled texture comes from one of two places. The shader can build it from a `texture` and a `sampler` bound apart, as Vulkan allows. Or the host joins them and binds the `[sampled; N]T` itself, which is the only way on GL. Vulkan takes that model too, and it works the same in Bento: a shader that binds sampled textures runs on GL and Vulkan unchanged.
+
 Storage images are read and written with one integer coordinate per dimension. Texels are four lanes of the scalar type of the image.
 
 ```bento
@@ -351,11 +362,11 @@ fn swap(cs: Blit) with (t: Thread) {
 }
 ```
 
-Indexing a sampled texture reads a texel at level 0 by integer coordinates. Filtered sampling is done with builtins. Cubes are written `[sampled; 6]f32`.
+Sampled textures are bound with `texture(n)`. Indexing one reads a texel at level 0 by integer coordinates. Filtered sampling is done with builtins. Cubes are written `[sampled; 6]f32`.
 
 ```bento
 struct Surface {
-	[[sampled(0)]] albedo: [sampled; 2]f32,
+	[[texture(0)]] albedo: [sampled; 2]f32,
 	[[location(0)]] uv: f32x2,
 }
 
@@ -368,7 +379,7 @@ Layered textures are written with the count of layers in brackets before the kin
 
 ```bento
 struct Terrain {
-	[[sampled(0)]] albedo: [[8]sampled; 2]f32,
+	[[texture(0)]] albedo: [[8]sampled; 2]f32,
 	[[location(0), interpolate(.Flat)]] layer: u32,
 }
 
@@ -388,12 +399,12 @@ On every target the layer becomes part of the coordinate. Functions given one la
 
 #### Multisampled textures
 
-The samples of a multisampled texture are an array in the texel type. `[sampled; 2][4]f32` has 4 samples and `[sampled; 2][]f32` has any count. The same form works for `image` and `texture` in 2 dimensions. Indexing follows the type: the coordinate gives a texel of samples and the sample is one more index after it, like the index of any other array.
+The samples of a multisampled texture are an array in the texel type. `[texture; 2][4]f32` has 4 samples and `[texture; 2][]f32` has any count. Storage images take the same form in 2 dimensions. Sampled textures have no samples, and multisampled textures are read without a sampler. Indexing follows the type: the coordinate gives a texel of samples and the sample is one more index after it, like the index of any other array.
 
 ```bento
 struct Resolve {
 	[[position]] at: f32x4,
-	[[sampled(0)]] color: [sampled; 2][4]f32,
+	[[texture(0)]] color: [texture; 2][4]f32,
 }
 
 let at = fs.at.xy as i32x2;
@@ -409,20 +420,35 @@ Counts of samples are powers of two up to 64. Constant sample indices are checke
 Storage multisampled images need `shaderStorageImageMultisample` on Vulkan and are an error on GLSL ES. Layered multisampled textures are an error on GLSL ES 3.10.
 :::
 
-Arrays, layers, and samples combine. `[N][[K]sampled; 2][S]T` is an `N` sized array of `K` layered 2D multisample samplers each with `S` samples. Every level is indexed in order, from the array to the sample:
+Arrays, layers, and samples combine. `[N][[K]texture; 2][S]T` is an `N` sized array of `K` layered 2D multisampled textures each with `S` samples. Every level is indexed in order, from the array to the sample:
 
 ```bento
 let texel = t[n][k][x, y][i];
 ```
 
-`t[n]` is one `[[K]sampled; 2][S]T`, `t[n][k]` is its layer `k` as a `[sampled; 2][S]T`, and `[x, y][i]` reads sample `i` of the texel at `x, y`.
+`t[n]` is one `[[K]texture; 2][S]T`, `t[n][k]` is its layer `k` as a `[texture; 2][S]T`, and `[x, y][i]` reads sample `i` of the texel at `x, y`.
 
 Arrays of textures are bound at one binding and `t[n]` is the texture at index `n`. Indices into them need no marking by hand. `NonUniform` is added wherever the uniformity analysis cannot prove an index uniform.
 
-Separate textures and samplers are joined where they are sampled.
+Textures and samplers can also be bound apart and joined in the shader, to use one texture with several samplers or one sampler with many textures. `[texture; N]T` takes every form `[sampled; N]T` does, and a `[sampled; N]T` is built from a texture of the same form and a `sampler`. A texture is read with `[]` like a sampled texture. Sampling builtins take sampled textures only, since filtering needs a sampler.
+
+```bento
+struct Shade {
+	[[texture(0)]] albedo: [texture; 2]f32,
+	[[sampler(0)]] nearest: sampler,
+	[[location(0)]] uv: f32x2,
+}
+
+fn read(t: [sampled; 2]f32, at: i32x2) -> f32x4 {
+	return t[...at];
+}
+
+let albedo = [sampled; 2]f32 { fs.albedo, fs.nearest };
+let texel = read(albedo, at);
+```
 
 ::: note
-Separate textures and samplers are an error on OpenGL.
+Samplers are an error on OpenGL. A texture there is declared as a GLSL sampler and read with `[]` alone.
 :::
 
 Bindless handles are eight-byte values stored in buffers on every target. The host writes one struct for every backend.
@@ -454,11 +480,11 @@ Entry points are declared with `[[stage(...)]]` and one of `.Vertex`, `.Fragment
 | `color(n)` | fragment output | color attachment `n` |
 | `position`, `frag_depth` | vertex output, fragment output | clip position and depth |
 | `storage(n)`, `constant(n)` | input | storage and constant buffers |
-| `image(n)`, `sampled(n)`, `texture(n)`, `sampler(n)` | input | images, sampled textures, textures, and samplers |
+| `image(n)`, `texture(n)`, `sampler(n)` | input | images, textures and sampled textures, and samplers |
 | `scene(n)` | input | ray tracing scene |
 | `interpolate(.Smooth \| .Flat \| .NoPerspective)` | varying | interpolation, flat for integers |
 
-No two fields of the parameter, or of the result, share a slot. Matrices use one location or attribute slot per column. Buffers, images, and textures share one set of binding numbers.
+No two fields of the parameter, or of the result, share a slot. Matrices use one location or attribute slot per column. Each kind of resource is numbered on its own from 0: `constant`, `storage`, `image`, `texture`, and `sampler`, with sampled textures numbered as textures. `constant(0)` and `storage(0)` are two buffers, and `texture(0)` and `sampler(0)` are a texture and a sampler. The [targets](targets.html#bindings) page shows how each API numbers them. Bindless handles stored in buffers have no numbers.
 
 ```bento
 struct Mesh {
