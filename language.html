@@ -342,21 +342,21 @@ Textures and images come down to four types:
 - `[image; N]T` is a storage image that is read and written directly.
 - `[texture; N]T` is texture data that is indexed with `[]` on every target and is the only texture type with samples.
 - `sampler` is a sampler object alone.
-- `[sampled; N]T` is a texture combined with a sampler, either bound already combined on every target or built in the shader on Vulkan.
+- `[sampled; N]T` is a texture combined with a sampler, either bound already combined on every target or built in the shader in Vulkan and Metal.
 :::
 
 In GLSL the word sampler is used for both a sampler object and a texture combined with one, as in `sampler2D`. Bento separates the two. Samplers are sampler objects alone and are not tied to any texture. Textures combined with a sampler are sampled textures and are written `[sampled; N]T`.
 
-| Bento | What it is | GLSL | Vulkan |
-| --- | --- | --- | --- |
-| `[texture; N]T` | texture data, read with `[]` | a GLSL sampler in OpenGL, read with `texelFetch` | sampled image |
-| `sampler` | sampler object | none, an error in OpenGL | sampler |
-| `[sampled; N]T` | a texture combined with a sampler | a GLSL sampler | combined image sampler |
-| `[image; N]T` | storage image | a GLSL image | storage image |
+| Bento | What it is | GLSL | Vulkan | Metal |
+| --- | --- | --- | --- | --- |
+| `[texture; N]T` | texture data, read with `[]` | a GLSL sampler in OpenGL, read with `texelFetch` | sampled image | a Metal texture, read with `read` |
+| `sampler` | sampler object | none, an error in OpenGL | sampler | `sampler` |
+| `[sampled; N]T` | a texture combined with a sampler | a GLSL sampler | combined image sampler | a Metal texture and a `sampler` |
+| `[image; N]T` | storage image | a GLSL image | storage image | a Metal texture with `access::read_write` |
 
 GLSL sampler and image types follow the form of the texture, from `sampler1D` and `image1D` to `samplerCubeArray` and `imageCubeArray`, and are prefixed with `i` or `u` for integer texels.
 
-Sampled textures are either built in the shader from a texture and a sampler bound apart or bound already combined. Only the second is allowed in OpenGL. Vulkan supports both. Shaders that bind sampled textures run unchanged in OpenGL and Vulkan.
+Sampled textures are either built in the shader from a texture and a sampler bound apart or bound already combined. Only the second is allowed in OpenGL. Vulkan and Metal support both. Shaders that bind sampled textures run unchanged in OpenGL and Vulkan.
 
 Storage images are read and written with one integer coordinate per dimension. Texels are always a four component vector type with the same scalar type as the image.
 

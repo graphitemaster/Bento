@@ -152,12 +152,12 @@ let normal = [sampled; 2]f32 { fs.normal, fs.nearest };
 
 The operands of `%10 = OpTypeImage %float 2D 0 0 0 1 Unknown` are the texel type, 2D, not a depth image, not layered, not multisampled, Sampled 1, and no format. Every type is declared and read as follows:
 
-| Bento | Vulkan SPIR-V | OpenGL SPIR-V | GLSL |
-| --- | --- | --- | --- |
-| `[texture; N]T` | `OpTypeImage` with Sampled 1, read with `OpImageFetch` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | a GLSL sampler, read with `texelFetch` |
-| `[sampled; N]T` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | the same | a GLSL sampler, read with `texelFetch` |
-| `[image; N]T` | `OpTypeImage` with Sampled 2, read with `OpImageRead` and written with `OpImageWrite` | the same | a GLSL image, read with `imageLoad` and written with `imageStore` |
-| `sampler` | `OpTypeSampler` | an error | an error |
+| Bento | Vulkan SPIR-V | OpenGL SPIR-V | GLSL | Metal |
+| --- | --- | --- | --- | --- |
+| `[texture; N]T` | `OpTypeImage` with Sampled 1, read with `OpImageFetch` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | a GLSL sampler, read with `texelFetch` | a texture with `access::read`, read with `read` |
+| `[sampled; N]T` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | the same | a GLSL sampler, read with `texelFetch` | a texture with `access::sample` and a `sampler`, read with `read` |
+| `[image; N]T` | `OpTypeImage` with Sampled 2, read with `OpImageRead` and written with `OpImageWrite` | the same | a GLSL image, read with `imageLoad` and written with `imageStore` | a texture with `access::read_write`, read with `read` and written with `write` |
+| `sampler` | `OpTypeSampler` | an error | an error | `sampler` |
 
 Only `[image; N]T` is ever Sampled 2. OpenGL has no textures without samplers. Textures are declared there as sampled images and `OpImage` is used to get the image back out before the fetch.
 

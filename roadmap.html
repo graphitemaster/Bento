@@ -56,12 +56,12 @@
 
 ## Later
 
-- Sampling builtins and separate textures and samplers for Vulkan
+- Sampling builtins
 - Bindless as eight-byte handles in buffers for descriptor indexing, Vulkan descriptor heaps, and OpenGL bindless, and `NonUniform` decided by the uniformity analysis
 - Simdgroup operations
 - Task and mesh stages
 - Ray tracing: ray queries first, then native SPIR-V pipelines, the software lowering for OpenGL, and the pipeline sugar last
-- AIR for buffers of structs, calls and intrinsics, workgroup memory, and images
+- AIR for buffers of structs, calls and intrinsics, workgroup memory, images, textures, and samplers
 - LICM, sinking, unrolling, and loop fusion and fission
 - Stable bytecode. Images only load into the version of Bento that wrote them, built with the same layout. The delivery format is meant to stay stable across versions and portable across machines.
 - Completion and definitions into imports in the language server, and warnings alongside errors
