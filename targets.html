@@ -64,7 +64,21 @@ Bind every resource at its own number:
 
 Textures and sampled textures are both GLSL samplers at a texture unit in OpenGL. Samplers bound apart are an error.
 
-No API has holes in its bindings when a module contains a single program and every kind is numbered from 0 without gaps. Only resources bound to an entry point are numbered this way. Bindless handles are 8-byte values stored in buffers and are not numbered.
+No API has holes in its bindings when a module contains a single program and every kind is numbered from 0 without gaps. Only resources bound to an entry point are numbered this way. Bindless handles are stored in buffers and are not numbered.
+
+## Bindless
+
+Write stored handles into buffers as follows:
+
+| Bento | Vulkan, descriptor indexing | OpenGL | Metal |
+| --- | --- | --- | --- |
+| `[texture; N]T`, `[image; N]T` | the index in the descriptor array of its kind, then zero | the handle from `glGetTextureHandleARB` or `glGetImageHandleARB` | the `gpuResourceID` |
+| `sampler` | the index in the descriptor array of samplers, then zero | an error | the `gpuResourceID` |
+| `[sampled; N]T` | the index of the texture and the index of the sampler, then 8 bytes of zero | the handle from `glGetTextureSamplerHandleARB`, then 8 bytes of zero | the `gpuResourceID` of the texture and then of the sampler |
+
+On Vulkan every kind of descriptor is in a separate runtime descriptor array. With `VK_EXT_descriptor_heap` the indices are heap indices instead. In OpenGL make every handle resident with `glMakeTextureHandleResidentARB` or `glMakeImageHandleResidentARB` before drawing. In Metal create samplers with `supportArgumentBuffers` and make every texture and sampler resident with `useResource` or a residency set.
+
+In generated code a handle on Vulkan is an index into the descriptor array for that kind and is decorated `NonUniform` when it is not uniform. In OpenGL the handle is converted with `ARB_bindless_texture` in GLSL and `SPV_NV_bindless_texture` in SPIR-V. Handles that are not uniform are an error in OpenGL.
 
 ## SPIR-V
 

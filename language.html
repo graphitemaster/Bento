@@ -462,7 +462,9 @@ let texel = read(albedo, at);
 Samplers are an error in OpenGL. Textures are declared there as GLSL samplers that are only indexed.
 :::
 
-Bindless handles are eight-byte values stored in buffers on every target. The host writes one struct for every backend.
+#### Bindless
+
+Images, textures, sampled textures, and samplers can also be stored in buffers and loaded from them instead of being bound to an entry point. Stored sampled textures are 16 bytes and every other stored handle is 8 bytes. Both are aligned to 8 on every target. The host writes one struct for every backend.
 
 ```bento
 struct Material {
@@ -476,9 +478,16 @@ struct Shade {
 	[[location(0), interpolate(.Flat)]] index: u32,
 	[[location(1)]] uv: f32x2,
 }
+
+let material = fs.materials[fs.index];
+let texel = material.albedo[0, 0] * material.tint;
 ```
 
-Indices that differ between invocations are found by the uniformity analysis and need no marking by hand.
+Stored handles are ordinary values. They are copied into locals, structs, and arrays in any memory, written back to buffers, and chosen between with `?:`. Indices that differ between invocations are found by the uniformity analysis and need no marking by hand.
+
+Handles are converted to and from integers with `as`. Sampled textures are converted to `u32x4` and other handles to `u32x2` or `u64`. Integers packed into other data or read out of a texture become handles again this way. The integers are whatever handles the target uses and mean something different on each one. Converting an integer that is not a handle is undefined on the GPU.
+
+Handles bound to an entry point have no stored form and cannot be stored or converted. Neither can a single layer of a layered handle.
 
 ## Entry points and stages
 
