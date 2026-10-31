@@ -308,7 +308,7 @@ Packing puts the first lane in the lowest bits.
 
 | Instruction | Meaning |
 | --- | --- |
-| `imgload img, coord`, `imgload img, coord, sample` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are four lanes of the scalar of the image. Textures and sampled textures are read at level 0 and cannot be cubes. |
+| `imgload img, coord`, `imgload img, coord, sample` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are always a four component vector type with the same scalar type as the image. Textures and sampled textures are read at level 0 and cannot be cubes. |
 | `imgstore img, coord, texel`, `imgstore img, coord, texel, sample` | Writes a texel to a storage image. |
 | `layer img, $k`, `layer img, i` | One layer of a layered image. |
 | `sampled tex, smp` | Sampled texture of the same form as the texture, combined with the sampler. |

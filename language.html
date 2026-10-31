@@ -358,7 +358,7 @@ GLSL sampler and image types follow the form of the texture, from `sampler1D` an
 
 Sampled textures are either built in the shader from a texture and a sampler bound apart or bound already combined. Only the second is allowed in OpenGL. Vulkan supports both. Shaders that bind sampled textures run unchanged in OpenGL and Vulkan.
 
-Storage images are read and written with one integer coordinate per dimension. Texels are four lanes of the scalar type of the image.
+Storage images are read and written with one integer coordinate per dimension. Texels are always a four component vector type with the same scalar type as the image.
 
 ```bento
 struct Blit {
