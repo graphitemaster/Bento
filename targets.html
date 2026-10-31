@@ -39,13 +39,14 @@ Every kind of resource is numbered separately in Bento from 0. Shaders generated
 
 ### Vulkan
 
-Create the pipeline layout from three descriptor set layouts:
+Create the pipeline layout from up to four descriptor set layouts:
 
 - Set 0 contains a `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER` at binding `n` for every `constant(n)` and a `VK_DESCRIPTOR_TYPE_STORAGE_BUFFER` at binding `C + n` for every `storage(n)`.
 - Set 1 contains a `VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER` or `VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE` at binding `n` for every `texture(n)` and a `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` at binding `T + n` for every `image(n)`.
 - Set 2 contains a `VK_DESCRIPTOR_TYPE_SAMPLER` at binding `n` for every `sampler(n)`.
+- Set 3 contains the descriptor arrays of stored handles, as described under [bindless](#bindless).
 
-Leave set 2 out when no samplers are bound apart from their textures. Give an unused set an empty layout when a later set is used.
+Leave set 2 out when no samplers are bound apart from their textures. Leave set 3 out when no handles are stored. Give an unused set an empty layout when a later set is used.
 
 ### Metal
 
@@ -76,7 +77,7 @@ Write stored handles into buffers as follows:
 | `sampler` | the index in the descriptor array of samplers, then zero | an error | the `gpuResourceID` |
 | `[sampled; N]T` | the index of the texture and the index of the sampler, then 8 bytes of zero | the handle from `glGetTextureSamplerHandleARB`, then 8 bytes of zero | the `gpuResourceID` of the texture and then of the sampler |
 
-On Vulkan every kind of descriptor is in a separate runtime descriptor array. With `VK_EXT_descriptor_heap` the indices are heap indices instead. In OpenGL make every handle resident with `glMakeTextureHandleResidentARB` or `glMakeImageHandleResidentARB` before drawing. In Metal create samplers with `supportArgumentBuffers` and make every texture and sampler resident with `useResource` or a residency set.
+On Vulkan the descriptor arrays are in set 3: sampled images at binding 0, storage images at binding 1, and samplers at binding 2. Create each as a runtime array with descriptor indexing. With `VK_EXT_descriptor_heap` the indices are heap indices instead. In OpenGL make every handle resident with `glMakeTextureHandleResidentARB` or `glMakeImageHandleResidentARB` before drawing. In Metal create samplers with `supportArgumentBuffers` and make every texture and sampler resident with `useResource` or a residency set.
 
 In generated code a handle on Vulkan is an index into the descriptor array for that kind and is decorated `NonUniform` when it is not uniform. In OpenGL the handle is converted with `ARB_bindless_texture` in GLSL and `SPV_NV_bindless_texture` in SPIR-V. Handles that are not uniform are an error in OpenGL.
 

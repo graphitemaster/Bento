@@ -464,7 +464,12 @@ Samplers are an error in OpenGL. Textures are declared there as GLSL samplers th
 
 #### Bindless
 
-Images, textures, sampled textures, and samplers can also be stored in buffers and loaded from them instead of being bound to an entry point. Stored sampled textures are 16 bytes and every other stored handle is 8 bytes. Both are aligned to 8 on every target. The host writes one struct for every backend.
+Images, textures, sampled textures, and samplers can also be stored in buffers and loaded from them instead of being bound to an entry point. The host writes one struct for every backend. Stored handles have the same size and alignment on every target:
+
+| Type | Size | Alignment |
+| --- | --- | --- |
+| `[sampled; N]T` | 16 | 16 |
+| `[texture; N]T`, `[image; N]T`, `sampler` | 8 | 8 |
 
 ```bento
 struct Material {
