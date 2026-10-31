@@ -25,23 +25,23 @@ One entry point is generated at a time. No target can pass buffers, workgroup me
 
 ## Bindings
 
-Bento numbers each kind of resource on its own. Every target puts them in three groups: buffers, textures, and samplers. On Vulkan the groups are descriptor sets 0, 1, and 2, and on Metal the buffer, texture, and sampler slots. Within a group the kinds come in a fixed order and the second kind starts where the first ends:
+Every kind of resource is numbered separately in Bento and the numbers are collapsed into three groups for every target: buffers, textures, and samplers. The groups are descriptor sets 0, 1, and 2 on Vulkan and the buffer, texture, and sampler slots on Metal. Within a group the kinds are laid out in a fixed order and the second kind is numbered from the end of the first:
 
 | Bento | Vulkan | Metal | OpenGL |
 | --- | --- | --- | --- |
 | `constant(n)` | set 0, binding `n` | `[[buffer(n)]]` | uniform block at binding `n` |
 | `storage(n)` | set 0, binding `C + n` | `[[buffer(C + n)]]` | storage block at binding `n` |
-| `texture(n)` | set 1, binding `n` | `[[texture(n)]]` | `sampler2D` and the like at texture unit `n` |
-| `image(n)` | set 1, binding `T + n` | `[[texture(T + n)]]` | `image2D` and the like at image unit `n` |
+| `texture(n)` | set 1, binding `n` | `[[texture(n)]]` | a GLSL sampler at texture unit `n` |
+| `image(n)` | set 1, binding `T + n` | `[[texture(T + n)]]` | a GLSL image at image unit `n` |
 | `sampler(n)` | set 2, binding `n` | `[[sampler(n)]]` | an error |
 
-On GL `texture(n)` holds sampled textures and textures, which GLSL both declares as samplers. A texture is the same sampler that only `[]` reads. A Bento `sampler` is only a sampler object, which GL binds to a texture unit and never to a shader, so no GL shader takes one.
+On GL textures and sampled textures are both declared as GLSL samplers at a texture unit. Textures are only indexed. Sampler objects are bound to texture units by the host and cannot be given to a GL shader.
 
-`C` is the number of constant buffers and `T` the number of textures, one more than the highest `constant(n)` or `texture(n)` any entry point of the module takes. Both come from the whole module, so every stage of a program agrees. The host knows its own counts and finds every binding without reflection. OpenGL numbers each kind apart already and takes the numbers as written.
+`C` is the number of constant buffers and `T` is the number of textures, counted as one more than the highest `constant(n)` and `texture(n)` used by any entry point of the module. Both are counted over the whole module because every stage of a program has to agree on them. Every binding can be found from these counts without reflection. OpenGL already numbers each kind separately and uses the numbers as written.
 
-A module with one program numbered from 0 without gaps leaves no holes on any API. Set 2 is only needed for samplers bound apart from their textures. On Metal the buffers of a vertex descriptor take the slots after the storage buffers.
+No API has holes in its bindings when a module contains a single program and every kind is numbered from 0 without gaps. Set 2 is not needed unless samplers are bound apart from their textures. On Metal the buffers of a vertex descriptor go in the slots after the storage buffers.
 
-These numbers are for resources bound to an entry point. Bindless handles are 8-byte values in buffers and have no numbers.
+Only resources bound to an entry point are numbered this way. Bindless handles are 8-byte values stored in buffers and are not numbered.
 
 ## SPIR-V
 
@@ -92,18 +92,18 @@ Capabilities and extensions are declared only when used. SPIR-V derivatives are 
 
 ### Textures and samplers
 
-SPIR-V has one type, `OpTypeImage`, for what GL calls both textures and images. Its Sampled operand tells them apart: 1 for a texture, used with a sampler or fetched, and 2 for a storage image, read and written directly. A texture joined with a sampler is an `OpTypeSampledImage` of a Sampled 1 image.
+What GL calls textures and what it calls images are the same `OpTypeImage` type in SPIR-V. The Sampled operand of the type is 1 for a texture used with a sampler or fetched and 2 for a storage image that is read and written directly. Textures combined with a sampler are an `OpTypeSampledImage` of a Sampled 1 image.
 
-Each kind of binding takes one kind of descriptor, in the set and at the binding given under [bindings](#bindings):
+Every kind of binding is one kind of descriptor at the set and binding listed under [bindings](#bindings):
 
 | Binding | SPIR-V | Vulkan descriptor | OpenGL |
 | --- | --- | --- | --- |
-| `texture(n)` of a `[sampled; N]T` | `OpTypeSampledImage` | `VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER` | a `sampler2D`, from the texture and the sampler object bound to unit `n` |
+| `texture(n)` of a `[sampled; N]T` | `OpTypeSampledImage` | `VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER` | a GLSL sampler, from the texture and the sampler object bound to unit `n` |
 | `texture(n)` of a `[texture; N]T` | `OpTypeImage` with Sampled 1 | `VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE` | the sampler type of a `[sampled; N]T`, read with `texelFetch` only |
 | `sampler(n)` | `OpTypeSampler` | `VK_DESCRIPTOR_TYPE_SAMPLER` | an error |
-| `image(n)` | `OpTypeImage` with Sampled 2 | `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` | an `image2D` at image unit `n` |
+| `image(n)` | `OpTypeImage` with Sampled 2 | `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` | a GLSL image at image unit `n` |
 
-A `[sampled; N]T` is the form every target takes, and the same shader runs on OpenGL and Vulkan. On Vulkan the host writes the image view and the sampler into one `VkDescriptorImageInfo`, or gives the sampler as an immutable sampler of the set layout. On OpenGL it binds the texture with `glBindTextureUnit(n, texture)` and the sampler object with `glBindSampler(n, sampler)`.
+Sampled textures are supported on every target. On Vulkan the image view and the sampler are written to one `VkDescriptorImageInfo` or the sampler is made an immutable sampler of the set layout. On OpenGL the texture is bound with `glBindTextureUnit(n, texture)` and the sampler object with `glBindSampler(n, sampler)`.
 
 ```bento
 struct Shade {
@@ -125,22 +125,22 @@ let normal = [sampled; 2]f32 { fs.normal, fs.nearest };
          %17 = OpVariable %_ptr_UniformConstant_16 UniformConstant
 ```
 
-`albedo` is a combined image sampler at binding 0 of set 1. `normal` is a sampled image at binding 1 of set 1 and `nearest` a sampler at binding 0 of set 2, written to their own descriptors and joined in the shader. Samplers need Vulkan. Textures are read without a sampler and work on both.
+`albedo` is a combined image sampler at binding 0 of set 1. `normal` is a sampled image at binding 1 of set 1 and `nearest` is a sampler at binding 0 of set 2. Both are written to separate descriptors and combined in the shader.
 
-The operands of `%10 = OpTypeImage %float 2D 0 0 0 1 Unknown` are the texel type, 2D, not a depth image, not layered, not multisampled, Sampled 1, and no format. Each type is declared and read this way:
+The operands of `%10 = OpTypeImage %float 2D 0 0 0 1 Unknown` are the texel type, 2D, not a depth image, not layered, not multisampled, Sampled 1, and no format. Every type is declared and read as follows:
 
 | Bento | Vulkan SPIR-V | OpenGL SPIR-V | GLSL |
 | --- | --- | --- | --- |
-| `[texture; N]T` | `OpTypeImage` with Sampled 1, read with `OpImageFetch` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | `sampler2D` or `sampler2DMS`, read with `texelFetch` |
-| `[sampled; N]T` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | the same | `sampler2D`, read with `texelFetch` |
-| `[image; N]T` | `OpTypeImage` with Sampled 2, read with `OpImageRead` and written with `OpImageWrite` | the same | `image2D`, read with `imageLoad` and written with `imageStore` |
+| `[texture; N]T` | `OpTypeImage` with Sampled 1, read with `OpImageFetch` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | a GLSL sampler, read with `texelFetch` |
+| `[sampled; N]T` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | the same | a GLSL sampler, read with `texelFetch` |
+| `[image; N]T` | `OpTypeImage` with Sampled 2, read with `OpImageRead` and written with `OpImageWrite` | the same | a GLSL image, read with `imageLoad` and written with `imageStore` |
 | `sampler` | `OpTypeSampler` | an error | an error |
 
-Only `[image; N]T` is ever Sampled 2. Textures and sampled textures are always Sampled 1, bare or inside an `OpTypeSampledImage`. OpenGL has no textures without samplers, so a texture there is declared as a sampled image and `OpImage` takes the image back out of it before the fetch.
+Only `[image; N]T` is ever Sampled 2. OpenGL has no textures without samplers. Textures are declared there as sampled images and `OpImage` is used to get the image back out before the fetch.
 
-A `[sampled; N]T` built in the shader has no variable of its own. Its texture keeps its Sampled 1 variable and its sampler its `OpTypeSampler` variable. `[]` reads the texture directly, and sampling joins the two with `OpSampledImage` where it samples.
+Sampled textures built in the shader do not get a variable. Indexing one reads from the variable of the texture. For sampling, the texture and the sampler are combined with `OpSampledImage` at every sample.
 
-Multisampled textures are `[texture; 2][S]T`, since sampled textures have no samples. Storage images can be multisampled too, as `[image; 2][S]T`, which needs `shaderStorageImageMultisample` on Vulkan and is an error on GLSL ES.
+Multisampled textures are written `[texture; 2][S]T` and multisampled storage images `[image; 2][S]T`. Multisampled storage images require `shaderStorageImageMultisample` on Vulkan and are an error on GLSL ES.
 
 ## AIR for Metal
 
@@ -175,7 +175,7 @@ Extensions are enabled only when a feature from one is used.
 Shaders with 1D images, 64-bit integers, or reads from images without a format cannot be generated as GLSL ES.
 :::
 
-A `[sampled; N]T` or a `[texture; N]T` bound with `texture(n)` becomes a `sampler2D`, or the type for its form, at binding `n`. A multisampled `[texture; 2][S]T` becomes a `sampler2DMS`. A texture is read with `texelFetch` alone. GL has no separate samplers, and every `sampler` is an error.
+Textures and sampled textures bound with `texture(n)` are declared at binding `n` as the GLSL sampler type of the same form. `[[]texture; 2][4]u32` is declared as `usampler2DMSArray` and `[sampled; 6]f32` as `samplerCube`. Textures are read with `texelFetch` alone. Samplers are an error on GL.
 
 On GL and on GPUs without ray tracing hardware, ray tracing is lowered to software traversal of a BVH in storage buffers. The BVH builders are compute kernels written in Bento and shipped in `std`.
 

@@ -186,7 +186,7 @@ The uniformity of the region an `if` or `loop` creates is printed after the opco
 
 ## Instructions
 
-Operands of arithmetic, bitwise, and logic instructions have the type of the result. Where an instruction takes two or more operands, any of them can also be a scalar of the lane type, which is spread over every lane. Signed and unsigned integers share opcodes except where the bits of the result differ.
+Operands of arithmetic, bitwise, and logic instructions have the type of the result. Where an instruction has two or more operands, any of them can also be a scalar of the lane type, which is spread over every lane. Signed and unsigned integers share opcodes except where the bits of the result differ.
 
 ### Arithmetic
 
@@ -311,7 +311,7 @@ Packing puts the first lane in the lowest bits.
 | `imgload img, coord`, `imgload img, coord, sample` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are four lanes of the scalar of the image. Textures and sampled textures are read at level 0 and cannot be cubes. |
 | `imgstore img, coord, texel`, `imgstore img, coord, texel, sample` | Writes a texel to a storage image. |
 | `layer img, $k`, `layer img, i` | One layer of a layered image. |
-| `sampled tex, smp` | Sampled texture of the same form as the texture, joined with the sampler. |
+| `sampled tex, smp` | Sampled texture of the same form as the texture, combined with the sampler. |
 
 ### Derivatives
 
