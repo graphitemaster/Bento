@@ -349,14 +349,14 @@ In GLSL the word sampler is used for both a sampler object and a texture combine
 
 | Bento | What it is | GLSL | Vulkan |
 | --- | --- | --- | --- |
-| `[texture; N]T` | texture data, read with `[]` | a GLSL sampler on GL, read with `texelFetch` | sampled image |
-| `sampler` | sampler object | none, an error on GL | sampler |
+| `[texture; N]T` | texture data, read with `[]` | a GLSL sampler in OpenGL, read with `texelFetch` | sampled image |
+| `sampler` | sampler object | none, an error in OpenGL | sampler |
 | `[sampled; N]T` | a texture combined with a sampler | a GLSL sampler | combined image sampler |
 | `[image; N]T` | storage image | a GLSL image | storage image |
 
 GLSL sampler and image types follow the form of the texture, from `sampler1D` and `image1D` to `samplerCubeArray` and `imageCubeArray`, and are prefixed with `i` or `u` for integer texels.
 
-Sampled textures are either built in the shader from a texture and a sampler bound apart or bound already combined. Only the second is allowed on GL. Vulkan supports both. Shaders that bind sampled textures run unchanged on GL and Vulkan.
+Sampled textures are either built in the shader from a texture and a sampler bound apart or bound already combined. Only the second is allowed in OpenGL. Vulkan supports both. Shaders that bind sampled textures run unchanged in OpenGL and Vulkan.
 
 Storage images are read and written with one integer coordinate per dimension. Texels are four lanes of the scalar type of the image.
 
@@ -459,7 +459,7 @@ let texel = read(albedo, at);
 ```
 
 ::: note
-Samplers are an error on OpenGL. Textures are declared there as GLSL samplers that are only indexed.
+Samplers are an error in OpenGL. Textures are declared there as GLSL samplers that are only indexed.
 :::
 
 Bindless handles are eight-byte values stored in buffers on every target. The host writes one struct for every backend.
@@ -616,7 +616,7 @@ fn shadow(fs: Shadowed) -> Lit {
 
 Each any-hit filter passed to `trace` gets a separate traversal. Procedural geometry is handled by an `[[intersect]]` function. Bounces are written as loops rather than with recursion and the trace depth is known at compile time.
 
-The same source is lowered to the Vulkan ray tracing pipeline, to ray queries on Vulkan, D3D, and Metal, and to software BVH traversal on OpenGL and on GPUs without ray tracing hardware.
+The same source is lowered to the Vulkan ray tracing pipeline, to ray queries on Vulkan, D3D, and Metal, and to software BVH traversal in OpenGL and on GPUs without ray tracing hardware.
 
 ## Modules
 

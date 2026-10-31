@@ -44,7 +44,7 @@ In divergent code, the rest of the function is divergent after a `return` or `di
 | Derivatives and sampling with an implicit level of detail | a `quadgroup` or better, in a fragment shader |
 | Simdgroup operations | a `simdgroup` or better |
 | Barriers | a point in `workgroup` uniform code |
-| Indices into arrays of textures and bindless handles | `dispatch` uniform, or else `NonUniform` on Vulkan and an error on GL |
+| Indices into arrays of textures and bindless handles | `dispatch` uniform, or else `NonUniform` on Vulkan and an error in OpenGL |
 
 Requirements are checked through calls at any depth.
 

@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Targets · Bento</title>
-	<meta name="description" content="Bento code generation: SPIR-V for Vulkan and OpenGL, AIR for Metal, GLSL as a fallback for GL drivers, and C for rebuilding a module.">
+	<meta name="description" content="Bento code generation: SPIR-V for Vulkan and OpenGL, AIR for Metal, GLSL as a fallback for OpenGL drivers, and C for rebuilding a module.">
 	<link rel="stylesheet" href="style.css">
 	<script src="site.js" defer></script>
 </head>
@@ -62,7 +62,7 @@ Bind every resource at its own number:
 | `texture(n)` | `glBindTextureUnit(n, texture)`, and `glBindSampler(n, sampler)` for a sampled texture |
 | `image(n)` | `glBindImageTexture(n, texture, level, layered, layer, access, format)` |
 
-Textures and sampled textures are both GLSL samplers at a texture unit on GL. Samplers bound apart are an error.
+Textures and sampled textures are both GLSL samplers at a texture unit in OpenGL. Samplers bound apart are an error.
 
 No API has holes in its bindings when a module contains a single program and every kind is numbered from 0 without gaps. Only resources bound to an entry point are numbered this way. Bindless handles are 8-byte values stored in buffers and are not numbered.
 
@@ -115,7 +115,7 @@ Capabilities and extensions are declared only when used. SPIR-V derivatives are 
 
 ### Textures and samplers
 
-What GL calls textures and what it calls images are the same `OpTypeImage` type in SPIR-V. The Sampled operand of the type is 1 for a texture used with a sampler or fetched and 2 for a storage image that is read and written directly. Textures combined with a sampler are an `OpTypeSampledImage` of a Sampled 1 image.
+What OpenGL calls textures and what it calls images are the same `OpTypeImage` type in SPIR-V. The Sampled operand of the type is 1 for a texture used with a sampler or fetched and 2 for a storage image that is read and written directly. Textures combined with a sampler are an `OpTypeSampledImage` of a Sampled 1 image.
 
 Every kind of binding is one kind of descriptor at the set and binding listed under [bindings](#bindings):
 
@@ -198,9 +198,9 @@ Extensions are enabled only when a feature from one is used.
 Shaders with 1D images, 64-bit integers, or reads from images without a format cannot be generated as GLSL ES.
 :::
 
-Textures and sampled textures bound with `texture(n)` are declared at binding `n` as the GLSL sampler type of the same form. `[[]texture; 2][4]u32` is declared as `usampler2DMSArray` and `[sampled; 6]f32` as `samplerCube`. Textures are read with `texelFetch` alone. Samplers are an error on GL.
+Textures and sampled textures bound with `texture(n)` are declared at binding `n` as the GLSL sampler type of the same form. `[[]texture; 2][4]u32` is declared as `usampler2DMSArray` and `[sampled; 6]f32` as `samplerCube`. Textures are read with `texelFetch` alone. Samplers are an error in OpenGL.
 
-On GL and on GPUs without ray tracing hardware, ray tracing is lowered to software traversal of a BVH in storage buffers. The BVH builders are compute kernels written in Bento and shipped in `std`.
+In OpenGL and on GPUs without ray tracing hardware, ray tracing is lowered to software traversal of a BVH in storage buffers. The BVH builders are compute kernels written in Bento and shipped in `std`.
 
 `light::shade` is written as `light_shade`. Names starting with `gl_` or containing `__` are reserved in GLSL. `gl_ray` is written as `glx_ray` and `a__b` as `a_x_b`. Names that clash with GLSL or with a generated name get a suffix.
 
