@@ -75,6 +75,7 @@ The signature lists the generic parameters or the arguments of an instance, the 
 | `internal`, `export`, `import` | Linkage. Imported functions have no body. |
 | `Vertex`, `Fragment`, `Compute x y z` | Stage of an entry point, with the workgroup size for compute. |
 | `early_depth_test` | Fragment entry point that runs the depth test first. |
+| `inline`, `noinline` | Function inlined at every call, or never inlined. |
 | `dispatch`, `workgroup`, `simdgroup` | Least uniform region the function may be called from. Missing means `thread`. |
 | `for Vertex,Fragment` | Stages the function may be called from. Missing means every stage. |
 | `opcode n` | Primitive. Calls become instruction `n` on the types of the call. |
@@ -146,7 +147,7 @@ Builtins are read with `input`.
 
 ## Blocks and values
 
-The body of a function starts with `%bb0(%r1, …)`, whose arguments are the parameters. Blocks nested in an `if` or `loop` print after it under their own labels, followed by a label for the code after the `if` or `loop`.
+The body of a function starts with `%bb0(%r1, …)`, whose arguments are the parameters. Blocks nested in an `if` or `loop` print after it under their own labels, followed by a label for the code after the `if` or `loop`. A block that ends in `br` is followed by the block it branches to. Every block of the source is a block of its own.
 
 | Form | Meaning |
 | --- | --- |
@@ -174,6 +175,7 @@ Control flow is structured. Every block ends in exactly one jump, and values are
 | `if c, %bbT, %bbE` | Runs the then or the else arm on the `b32` scalar `c`. |
 | `loop %bbB` | Runs the body until it breaks. |
 | `yield %bbN` | Ends an arm of an `if` and continues after it. |
+| `br %bbN` | Ends the block and continues in block `N`, which nothing else jumps to. Values from before the `br` are in scope there. |
 | `break %bbN, $k` | Leaves the innermost loop by break edge `k`. |
 | `continue %bbB, $k` | Starts the next trip of the innermost loop by continue edge `k`. |
 | `return v, …` | Returns the result, or the elements of a tuple result. Entry points with outputs return the result struct. |
@@ -308,7 +310,7 @@ Packing puts the first lane in the lowest bits.
 
 | Instruction | Meaning |
 | --- | --- |
-| `imgload img, coord`, `imgload img, coord, sample` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are always a four component vector type with the same scalar type as the image. Textures and sampled textures are read at level 0 and cannot be cubes. |
+| `imgload img, coord`, `imgload img, coord, n` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are always a four component vector type with the same scalar type as the image. `n` is the sample of a multisampled texture, or the level of a texture or sampled texture, which is 0 without it. Storage images are read at the level of their binding. Textures and sampled textures cannot be cubes. |
 | `imgstore img, coord, texel`, `imgstore img, coord, texel, sample` | Writes a texel to a storage image. |
 | `layer img, $k`, `layer img, i` | One layer of a layered image. |
 | `sampled tex, smp` | Sampled texture of the same form as the texture, combined with the sampler. |

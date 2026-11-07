@@ -20,7 +20,7 @@ bento-link
 bento-opt
 : Optimizer with every pass and a count of the changes made by each.
 bento-llc
-: Code generator for SPIR-V, AIR, GLSL, and C source that rebuilds the module through the library.
+: Code generator for SPIR-V, AIR, DXIL, GLSL, and C source that rebuilds the module through the library.
 bento-dis
 : Disassembler from bytecode to IR text.
 bento-val
@@ -127,6 +127,7 @@ bento-llc opt.bbc --entry=grade -o grade.comp
 bento-llc opt.bbc --entry=gray -o gray.frag
 bento-llc opt.bbc --target=spirv --env=vulkan1.3 --entry=grade -o grade.spv
 bento-llc opt.bbc --target=air --env=ios17 --entry=grade -o grade.metallib
+bento-llc opt.bbc --target=dxil --entry=grade -o grade.dxil
 ```
 
 ::: note

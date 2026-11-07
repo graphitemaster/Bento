@@ -42,6 +42,7 @@
 - `std` as generic prototypes, two for each function
 - SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5, GLSL 4.50 and GLSL ES 3.10, and the C target
 - AIR for Metal compute, vertex, and fragment entry points with buffers, builtins, stage inputs and outputs, matrices, and control flow, for macOS, iOS, tvOS, and visionOS from Metal 3, written as a `.metallib` without LLVM
+- DXIL for Direct3D 12 with the same coverage as AIR, from Shader Model 6.9, written as a DXBC container that passes the validator without DXC
 - Out of memory reported once and returned from every stage, tested by failing every allocation in turn
 - Diagnostics in time proportional to the file, however many errors it has
 - Language server with diagnostics, hover, definitions, and outlines, and packages for VS Code and Sublime Text with one TextMate grammar
@@ -58,11 +59,11 @@
 ## Later
 
 - Sampling builtins
-- Bindless for Vulkan descriptor heaps and Metal, and `NonUniform` decided by the uniformity analysis
+- Bindless for Vulkan descriptor heaps, Direct3D 12, and Metal, and `NonUniform` decided by the uniformity analysis
 - Simdgroup operations
 - Task and mesh stages
 - Ray tracing: ray queries first, then native SPIR-V pipelines, the software lowering for OpenGL, and the pipeline sugar last
-- AIR for buffers of structs, calls and intrinsics, workgroup memory, images, textures, and samplers
+- AIR and DXIL for buffers of structs, calls and intrinsics, workgroup memory, images, textures, and samplers
 - LICM, sinking, unrolling, and loop fusion and fission
 - Stable bytecode. Images only load into the version of Bento that wrote them, built with the same layout. The delivery format is meant to stay stable across versions and portable across machines.
 - Completion and definitions into imports in the language server, and warnings alongside errors

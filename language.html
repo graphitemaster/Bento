@@ -289,12 +289,12 @@ Only the functions listed in `Light` are allowed in `shade`. The functions for `
 
 The memory space is part of every reference type. Conversions between spaces are not allowed.
 
-| Space | Memory | GLSL | Metal |
-| --- | --- | --- | --- |
-| `thread` | variables of one invocation | locals | `thread` |
-| `workgroup` | memory shared by a workgroup | `shared` | `threadgroup` |
-| `storage` | storage buffers, read and written | `buffer` | `device` |
-| `constant` | constant buffers, read only | `uniform` | `constant` |
+| Space | Memory | GLSL | HLSL | Metal |
+| --- | --- | --- | --- | --- |
+| `thread` | variables of one invocation | locals | locals | `thread` |
+| `workgroup` | memory shared by a workgroup | `shared` | `groupshared` | `threadgroup` |
+| `storage` | storage buffers, read and written | `buffer` | `RWByteAddressBuffer` | `device` |
+| `constant` | constant buffers, read only | `uniform` | `cbuffer` | `constant` |
 
 `&x` has the space of `x` and `*r` reads or writes through `r`. Fields, indices, and swizzles go through a reference without a `*`. References exist only as parameters and `let` bindings.
 
@@ -342,21 +342,21 @@ Textures and images come down to four types:
 - `[image; N]T` is a storage image that is read and written directly.
 - `[texture; N]T` is texture data that is indexed with `[]` on every target and is the only texture type with samples.
 - `sampler` is a sampler object alone.
-- `[sampled; N]T` is a texture combined with a sampler, either bound already combined on every target or built in the shader in Vulkan and Metal.
+- `[sampled; N]T` is a texture combined with a sampler, either bound already combined on every target or built in the shader in Vulkan, Direct3D 12, and Metal.
 :::
 
 In GLSL the word sampler is used for both a sampler object and a texture combined with one, as in `sampler2D`. Bento separates the two. Samplers are sampler objects alone and are not tied to any texture. Textures combined with a sampler are sampled textures and are written `[sampled; N]T`.
 
-| Bento | What it is | GLSL | Vulkan | Metal |
-| --- | --- | --- | --- | --- |
-| `[texture; N]T` | texture data, read with `[]` | a GLSL sampler in OpenGL, read with `texelFetch` | sampled image | a Metal texture, read with `read` |
-| `sampler` | sampler object | none, an error in OpenGL | sampler | `sampler` |
-| `[sampled; N]T` | a texture combined with a sampler | a GLSL sampler | combined image sampler | a Metal texture and a `sampler` |
-| `[image; N]T` | storage image | a GLSL image | storage image | a Metal texture with `access::read_write` |
+| Bento | What it is | GLSL | Vulkan | Direct3D 12 | Metal |
+| --- | --- | --- | --- | --- | --- |
+| `[texture; N]T` | texture data, read with `[]` | a GLSL sampler in OpenGL, read with `texelFetch` | sampled image | SRV | a Metal texture, read with `read` |
+| `sampler` | sampler object | none, an error in OpenGL | sampler | sampler | `sampler` |
+| `[sampled; N]T` | a texture combined with a sampler | a GLSL sampler | combined image sampler | SRV and a sampler | a Metal texture and a `sampler` |
+| `[image; N]T` | storage image | a GLSL image | storage image | UAV | a Metal texture with `access::read_write` |
 
 GLSL sampler and image types follow the form of the texture, from `sampler1D` and `image1D` to `samplerCubeArray` and `imageCubeArray`, and are prefixed with `i` or `u` for integer texels.
 
-Sampled textures are either built in the shader from a texture and a sampler bound apart or bound already combined. Only the second is allowed in OpenGL. Vulkan and Metal support both. Shaders that bind sampled textures run unchanged in OpenGL and Vulkan.
+Sampled textures are either built in the shader from a texture and a sampler bound apart or bound already combined. Only the second is allowed in OpenGL. Vulkan, Direct3D 12, and Metal support both. There is no combined form in Direct3D 12, where sampled textures bound already combined are split into a texture and a sampler at the same register. Shaders that bind sampled textures run unchanged on every target.
 
 Storage images are read and written with one integer coordinate per dimension. Texels are always a four component vector type with the same scalar type as the image.
 
@@ -373,7 +373,7 @@ fn swap(cs: Blit) with (t: Thread) {
 }
 ```
 
-Sampled textures are bound with `texture(n)`. Indexing a sampled texture reads a texel at level 0 by integer coordinates. Filtered sampling is done with builtins. Cubes are written `[sampled; 6]f32`.
+Sampled textures are bound with `texture(n)`. Indexing a sampled texture reads a texel by integer coordinates at level 0, or at the level written after the coordinates, as in `t[x, y, level]` or `t[...at, level]`. Textures are read the same way. Storage images and multisampled textures have one level: a storage image is read at the level of its binding. Filtered sampling is done with builtins. Cubes are written `[sampled; 6]f32`.
 
 ```bento
 struct Surface {
@@ -428,7 +428,7 @@ const for let i = 0; i < 4; i += 1 {
 Counts of samples are powers of two up to 64. Constant sample indices are checked against the count when it is given. One sample of a storage image is written the same way, as in `img[x, y][i] = texel`.
 
 ::: note
-Storage multisampled images need `shaderStorageImageMultisample` on Vulkan and are an error on GLSL ES. Layered multisampled textures are an error on GLSL ES 3.10.
+Storage multisampled images need `shaderStorageImageMultisample` in Vulkan and are an error in GLSL ES. Layered multisampled textures are an error in GLSL ES 3.10.
 :::
 
 Arrays, layers, and samples combine. `[N][[K]texture; 2][S]T` is an `N` sized array of `K` layered 2D multisampled textures each with `S` samples. Every level is indexed in order, from the array to the sample:
@@ -600,7 +600,7 @@ Inner `with` blocks shadow outer ones. Contexts are top-level declarations and a
 
 ## Ray tracing
 
-`trace(world, ray)` returns a `Hit`. The payload is derived from whatever is live across the trace and is never declared. Hit, miss, and callable shaders are ordinary functions and materials are a `switch` on the hit.
+`trace(world, ray)` returns an `h32`, the built-in hit type. The payload is derived from whatever is live across the trace and is never declared. Hit, miss, and callable shaders are ordinary functions and materials are a `switch` on the hit.
 
 ```bento
 struct Shadowed {
@@ -624,13 +624,13 @@ fn shadow(fs: Shadowed) -> Lit {
 }
 ```
 
-`scene` is the top-level acceleration structure and bottom-level structures are hidden from shaders. Both levels are reported in a `Hit`: the custom id, transform, and object-space ray of the instance, and the geometry index, primitive, and barycentrics.
+`scene` is the top-level acceleration structure and bottom-level structures are hidden from shaders. Both levels are reported in the `h32`: the custom id, transform, and object-space ray of the instance, and the geometry index, primitive, and barycentrics.
 
 `r32` is a built-in ray type with an origin, direction, and range that read like fields and cannot be changed. Derived data such as the inverse direction is computed once per ray and dropped where hardware does the traversal. `r16` is a storage format for rays in a small local space. The two convert with `as` and only `r32` is accepted by `trace`.
 
 Each any-hit filter passed to `trace` gets a separate traversal. Procedural geometry is handled by an `[[intersect]]` function. Bounces are written as loops rather than with recursion and the trace depth is known at compile time.
 
-The same source is lowered to the Vulkan ray tracing pipeline, to ray queries on Vulkan, D3D, and Metal, and to software BVH traversal in OpenGL and on GPUs without ray tracing hardware.
+The same source is lowered to the Vulkan ray tracing pipeline, to ray queries in Vulkan, Direct3D 12, and Metal, and to software BVH traversal in OpenGL and on GPUs without ray tracing hardware.
 
 ## Modules
 
@@ -691,6 +691,10 @@ workgroup_size(x, y, z)
 : workgroup size of a compute, task, or mesh entry point. Dimensions left out are 1.
 early_depth_test
 : depth and stencil testing before a fragment entry point is run
+math(.Reassoc, .Contract, .Transform, .NoNaNs, .NoInfs, .NoSignedZeros)
+: fast-math flags for a function or a block, in place of the flags around it. Without flags, as `math`, floating point is strict.
+inline(true), inline(false)
+: function inlined at every call, even with inlining turned off, or never inlined
 opcode(n)
 : function without a body standing for IR instruction `n`, with the parameters as its operands and the results as its results. Any instruction before `call` can be declared this way, and all of `std` is.
 assume, assume(n)

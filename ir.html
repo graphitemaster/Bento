@@ -39,37 +39,52 @@ module demo
 
 fn @sum(i32, f32) -> f32 export
 %bb0(%r1, %r2):
-	loop %bb1
+	%r26 = ilt $0, %r1
+	if %r26, %bb1, %bb13
 %bb1:
-	%r23 = phi $0, %r15, %r21
-	%r25 = phi $0.0, %r25, %r19
-	%r27 = igeq %r23, %r1
-	if %r27, %bb2, %bb3
+	loop %bb2
 %bb2:
-	break %bb8, $0
+	%r22 = phi $0, %r14, %r20
+	%r24 = phi $0.0, %r24, %r18
+	%r31 = ishr %r22, $31
+	%r32 = band %r31, $1
+	%r33 = iadd %r22, %r32
+	%r34 = band %r33, $-2
+	%r11 = isub %r22, %r34
+	%r12 = ieq %r11, $0
+	if %r12, %bb3, %bb7
 %bb3:
-	yield %bb4
+	%r14 = iadd %r22, $1
+	%r27 = ilt %r14, %r1
+	if %r27, %bb4, %bb5
 %bb4:
-	%r28 = ishr %r23, $31
-	%r29 = band %r28, $1
-	%r30 = iadd %r23, %r29
-	%r31 = band %r30, $-2
-	%r12 = isub %r23, %r31
-	%r13 = ieq %r12, $0
-	if %r13, %bb5, %bb6
+	yield %bb6
 %bb5:
-	%r15 = iadd %r23, $1
-	continue %bb1, $0
+	break %bb12, $0
 %bb6:
-	yield %bb7
+	continue %bb2, $0
 %bb7:
-	%r18 = fmul %r2, $2.0
-	%r19 = fadd %r18, %r25
-	%r21 = iadd %r23, $1
-	continue %bb1, $1
+	yield %bb8
 %bb8:
-	%r26 = phi %r25
-	return %r26
+	%r17 = fmul %r2, $2.0
+	%r18 = fadd %r17, %r24
+	%r20 = iadd %r22, $1
+	%r28 = ilt %r20, %r1
+	if %r28, %bb9, %bb10
+%bb9:
+	yield %bb11
+%bb10:
+	break %bb12, $1
+%bb11:
+	continue %bb2, $1
+%bb12:
+	%r30 = phi %r24, %r18
+	yield %bb14
+%bb13:
+	yield %bb14
+%bb14:
+	%r25 = phi %r30, $0.0
+	return %r25
 ```
 
 Nesting is flattened under labels in printed IR. `%r` is a value, `%bb` a block, `$` a literal, and `@` a function or global. Uniformity qualifiers other than `simdgroup` are printed after the opcode, as in `loop.thread`.
@@ -94,26 +109,27 @@ Any program can build IR through the public builder. Failures in the builder are
 
 ```c sum.c
 	f = bto_ir_function_begin(b, BTO_STRING("sum"), T[2], BTO_IR_LINKAGE_EXPORT);
-	r1 = f->body->args.data[0];
-	r2 = f->body->args.data[1];
-	k0 = bto_ir_build_f32(b, 0.0);
-	k1 = bto_ir_build_i32(b, 0);
-	i = bto_ir_build_loop(b);
+	f->file = 0;
+	r1 = bto_ir_value(1);
+	r2 = bto_ir_value(2);
+	b->location = 80;
+	r26 = bto_ir_build_binary(b, BTO_IR_ILT, T[3], bto_ir_build_i32(b, 0), r1);
 	{
-		BTOIRInst* const n0 = i;
-		bto_ir_block_begin(b, bto_ir_blocks(n0).data[0]);
-		r23 = bto_ir_build_ternary(b, BTO_IR_PHI, T[1], k1, BTO_IR_VALUE_NONE, BTO_IR_VALUE_NONE);
-		r25 = bto_ir_build_ternary(b, BTO_IR_PHI, T[0], k0, BTO_IR_VALUE_NONE, BTO_IR_VALUE_NONE);
-		r27 = bto_ir_build_binary(b, BTO_IR_IGEQ, T[3], r23, r1);
-		...
-		r18 = bto_ir_build_binary(b, BTO_IR_FMUL, T[0], r2, k4);
-		r19 = bto_ir_build_binary(b, BTO_IR_FADD, T[0], r18, r25);
-		r21 = bto_ir_build_binary(b, BTO_IR_IADD, T[1], r23, k3);
-		bto_ir_build_jump(b, BTO_IR_CONTINUE);
-		bto_ir_block_end(b);
-	}
-	...
-	bto_ir_function_end(b);
+		const BTOUint32 n0 = bto_ir_build_if(b, r26, BTO_IR_SCOPE_SIMDGROUP);
+		bto_ir_block_begin(b, n0 + 0);
+		{
+			const BTOUint32 n1 = bto_ir_build_loop(b, BTO_IR_SCOPE_SIMDGROUP);
+			bto_ir_block_begin(b, n1 + 0);
+			r22 = bto_ir_build_ternary(b, BTO_IR_PHI, T[1], bto_ir_build_i32(b, 0), BTO_IR_NONE, BTO_IR_NONE);
+			r24 = bto_ir_build_ternary(b, BTO_IR_PHI, T[0], bto_ir_build_f32(b, 0.0), BTO_IR_NONE, BTO_IR_NONE);
+			b->location = 109;
+			r31 = bto_ir_build_binary(b, BTO_IR_ISHR, T[1], r22, bto_ir_build_i32(b, 31));
+			r32 = bto_ir_build_binary(b, BTO_IR_BAND, T[1], r31, bto_ir_build_i32(b, 1));
+			r33 = bto_ir_build_binary(b, BTO_IR_IADD, T[1], r22, r32);
+			r34 = bto_ir_build_binary(b, BTO_IR_BAND, T[1], r33, bto_ir_build_i32(b, -2));
+			r11 = bto_ir_build_binary(b, BTO_IR_ISUB, T[1], r22, r34);
+			r12 = bto_ir_build_binary(b, BTO_IR_IEQ, T[3], r11, bto_ir_build_i32(b, 0));
+			...
 ```
 
 ## Verification

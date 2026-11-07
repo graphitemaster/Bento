@@ -124,7 +124,7 @@ bento-llc --target=spirv hello.bbc</pre>
 	</div>
 	<div class="cell wide">
 		<h3>Optimizer</h3>
-		<p>Inlining, mem2reg, scalar replacement of aggregates, folding, if-conversion, CSE, dead store and redundant load elimination, aggressive dead code elimination, and load narrowing. Comprehensive rule-driven algebraic simplifications.</p>
+		<p>Inlining, mem2reg, scalar replacement of aggregates, loop inversion, folding, if-conversion, CSE, dead store and redundant load elimination, aggressive dead code elimination, and load narrowing. Comprehensive rule-driven algebraic simplifications.</p>
 	</div>
 	<div class="cell">
 		<h3>Library</h3>
@@ -147,7 +147,7 @@ bento-llc --target=spirv hello.bbc</pre>
 				<tr><th></th><th>Bento</th><th>GLSL, HLSL, WGSL</th></tr>
 			</thead>
 			<tbody>
-				<tr><td>Output</td><td>Lowered straight to SPIR-V, AIR, or GLSL</td><td>glslang, DXC, Tint, or a transpiler in between</td></tr>
+				<tr><td>Output</td><td>Lowered straight to SPIR-V, AIR, DXIL, or GLSL</td><td>glslang, DXC, Tint, or a transpiler in between</td></tr>
 				<tr><td>Reuse</td><td>Modules, imports, and a linker</td><td><code>#include</code></td></tr>
 				<tr><td>Variants</td><td>Type checked <code>const if</code>, <code>const for</code>, and generics</td><td>Preprocessor macros</td></tr>
 				<tr><td>Uniformity</td><td>Proven for every value and checked across modules</td><td>Unchecked in GLSL and HLSL but checked for derivatives and barriers in WGSL</td></tr>
@@ -168,7 +168,7 @@ bento-llc --target=spirv hello.bbc</pre>
 </div>
 <div class="tray">
 	<div class="cell full">
-		<p class="quote">&ldquo;The shader situation in Vulkan and DX12 is somewhat dire and this is an attempt at trying to address it.&rdquo;</p>
+		<p class="quote">&ldquo;The shader situation in Vulkan and Direct3D 12 is somewhat dire and this is an attempt at trying to address it.&rdquo;</p>
 		<p>The <a href="why.html">rationale</a> is about the lessons from past mistakes, why Bento is not a transpiler, and why the library comes first. Status is on the <a href="roadmap.html">roadmap</a>.</p>
 	</div>
 </div>

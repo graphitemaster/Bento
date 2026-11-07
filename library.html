@@ -18,9 +18,9 @@
 Bento depends on nothing, not even the freestanding C headers. It can be compiled with `-nostdinc` and for WebAssembly. Memory, files, and diagnostics are provided by the host through tables of callbacks.
 
 BTOAllocator
-: `allocate`, `reallocate`, and `deallocate`. The alignment is passed to each and the old size to the last two. Simple allocators need no records.
+: `alloc`, `realloc`, and `free`. The alignment is passed to each and the old size to the last two. Simple allocators need no records.
 BTOFilesystem
-: `open`, `close`, `read`, `write`, and `abspath`. It is optional and is used for nothing but absolute source paths in diagnostics.
+: `open`, `close`, `query`, `read`, `write`, and `abspath`. `query` gives the size of a file, or returns false when the size is unknown. The filesystem is optional and is used for nothing but absolute source paths in diagnostics.
 BTOReporter
 : `display` is called with each diagnostic as it is reported.
 
@@ -49,19 +49,19 @@ static const char SOURCE[] =
 	"\treturn { f32x4 { ...fs.uv, odd as f32, 1.0 } };\n"
 	"}\n";
 
-static void* allocate(void* user, BTOLength size, BTOLength align) {
+static void* heap_alloc(void* user, BTOLength size, BTOLength align) {
 	(void)user;
 	return align <= 16 ? malloc(size ? size : 1) : NULL;
 }
 
-static void* reallocate(void* user, void* data, BTOLength old_size,
-                        BTOLength size, BTOLength align) {
+static void* heap_realloc(void* user, void* data, BTOLength old_size,
+                          BTOLength size, BTOLength align) {
 	(void)user, (void)old_size;
 	return align <= 16 ? realloc(data, size ? size : 1) : NULL;
 }
 
-static void deallocate(void* user, void* data, BTOLength size,
-                       BTOLength align) {
+static void heap_free(void* user, void* data, BTOLength size,
+                      BTOLength align) {
 	(void)user, (void)size, (void)align;
 	free(data);
 }
@@ -71,14 +71,14 @@ static void display(void* user, const BTODiagnostic* d) {
 	(void)user;
 	if (d->line != 0)
 		fprintf(stderr, "%.*s:%u:%u: ", (int)d->file.length,
-			(const char*)d->file.data, d->line, d->column);
-	fprintf(stderr, "%.*s: %.*s\n", (int)kind.length, (const char*)kind.data,
+			(const char*)d->file.buffer, d->line, d->column);
+	fprintf(stderr, "%.*s: %.*s\n", (int)kind.length, (const char*)kind.buffer,
 		(int)d->message.length, (const char*)d->message.data);
 }
 
 int main(int argc, char** argv) {
 	const char* const target = argc > 1 ? argv[1] : "GLSL";
-	const BTOAllocator heap = { allocate, reallocate, deallocate, NULL };
+	const BTOAllocator heap = { heap_alloc, heap_realloc, heap_free, NULL };
 	const BTOSystem system = { NULL, &heap };
 	const BTOReporter reporter = { display, NULL };
 	BTOContext context;
@@ -150,6 +150,10 @@ Imports are modules in memory. Prebuilt modules such as `std.bbc` are read by th
 Each AST and each IR module has a separate arena and is freed in one call. The IR contains no pointers into the AST or the source. Working memory is acquired from scratch arenas of the context with `bto_acquire_scratch` and given back with `bto_release_scratch`. `bto_context_fini` returns false when a scratch arena was never given back. In the program above, no new allocations are made while verifying, optimizing, and writing GLSL.
 
 Running out of memory is an ordinary error. The first failed allocation is reported once and every stage returns `BTO_STATUS_OOM` from then on. When every allocation of a full build is failed in turn, one run at a time, each run ends cleanly without leaks.
+
+## Threads
+
+A context is never shared between threads. One thread may use several contexts. Scratch memory never leaves the stage that acquired it, and nothing a stage returns refers to its context. An AST or an IR module holds no context, so it can be handed to another thread with its arena and used there with that thread's context. Contexts on different threads may share a `BTOSystem` and a `BTOReporter` when the allocator and the reporter are safe to call from those threads.
 
 ## Untrusted input
 

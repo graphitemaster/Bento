@@ -20,7 +20,7 @@ Every pass depends on two facts: control flow is structured and every instructio
 mem2reg
 : Locals that are only loaded and stored whole are promoted to SSA values. The PHIs after each `if` and at the top and exit of each loop come from one ordered walk without dominance frontiers.
 fold
-: Constants are folded through every operator and builtin and through `extract`, `insert`, `construct`, and loads of constant globals. `select`, `&&`, and `||` with one side known are settled. `if`s with a known condition are replaced by the arm taken. Loops without a `continue` or an early `break` are replaced by the body.
+: Constants are folded through every operator and builtin and through `extract`, `insert`, `construct`, and loads of constant globals. `select`, `&&`, and `||` with one side known are settled. Under `nonans`, a NaN operand is folded as zero, and so is a result that would be NaN, such as the `sqrt` of a negative number or `x % 0.0`. Under `nosignedzero`, `min` and `max` of zeros of different signs are folded, and so is `sign(-0.0)`. `if`s with a known condition are replaced by the arm taken. Loops without a `continue` or an early `break` are replaced by the body. A block that a `br` leads to is merged into the block before it when both have the same fast-math flags.
 algebra
 : Rewrites come from a table of rules and a few transforms written by hand. Which of them apply depends on the fast-math flags of the block.
 cse
@@ -32,19 +32,21 @@ narrow
 dce
 : Dead code is found by mark and sweep: everything is dead until an effect needs it. Even values that only feed each other around a loop are removed. Whether a loop ends does not count as an effect.
 inlining
-: Every callee body is copied into the callers, callees first. Bodies whose only `return` is last are spliced in place of the call. Other bodies are wrapped in a loop that runs once and each `return` becomes a `break` out of it. Returns inside a loop of the callee become a `break` of that loop and a flag tested after it.
+: Every callee body is copied into the callers, callees first. Bodies whose only `return` is last are spliced in place of the call. Other bodies are wrapped in a loop that runs once and each `return` becomes a `break` out of it. Returns inside a loop of the callee become a `break` of that loop and a flag tested after it. Functions marked `inline(false)` are never inlined. Functions marked `inline(true)` are inlined even when inlining is turned off, past the size budget up to a fixed ceiling.
 ifconv
 : When both arms of an `if` only compute a few values that are safe to compute either way, both arms are run and the results are chosen with `select`. Divisions by a run-time value, conversions of a float to an integer, and reads at a run-time index are never moved out of an arm.
+invert
+: Loops that test at the top become an `if` on the test around a loop that tests at the bottom. The test is copied in front of every `continue`. Tests with effects or convergent instructions are never copied. The `if` takes the uniformity scope of the loop. Code hoisted out of the loop goes inside the `if`, where the body is known to run at least once.
 sroa
 : Structs, and arrays never indexed at run time, are split into one value per leaf. Types with many leaves stay whole.
 licm and sinking
-: Pure instructions with every operand defined outside a loop are hoisted out of it. Pure instructions used in only one arm are sunk into it.
+: Pure instructions with every operand defined outside a loop are hoisted out of it. Out of an inverted loop, instructions unsafe to run when the loop never runs are hoisted too. Pure instructions used in only one arm are sunk into it.
 unrolling
 : Loops with a trip count known after folding are unrolled whole below a size limit.
 loop fusion and fission
 : Neighboring loops with the same trip count are joined. Loops are split by fission to ease register pressure. Neither is done across a barrier.
 
-The order is inlining, mem2reg, SROA, fold and algebra, if-conversion, CSE, the memory walk, fold and algebra again, DCE, and then load narrowing. CSE comes before the memory walk. Equal access chains count as one pointer only once merged. Load narrowing comes last, after DCE has removed dead reads.
+The order is inlining, mem2reg, SROA, loop inversion, fold and algebra, if-conversion, CSE, the memory walk, fold and algebra again, DCE, and then load narrowing. CSE comes before the memory walk. Equal access chains count as one pointer only once merged. Load narrowing comes last, after DCE has removed dead reads.
 
 ## Algebra
 
