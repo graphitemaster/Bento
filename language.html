@@ -81,11 +81,13 @@ A constant converts to a domain when its value is in it and is an error otherwis
 
 Every type written `[kind; parameter]T` is indexed, and indexing it gives `T`. A type reads left to right in the order it is indexed.
 
-| Type | Indexed by | Gives |
+Each indexed type has a set of keys, and structs have one key for every field. One rule over those keys covers indexing, initializers, and `for ... in`. Indexing is done with a key and a positional initializer lists one value for every key in key order. Keyed initializers instead write `KEY = value` for each key, where a range key like `0..<4 = 1.0` covers every key in the range. `for k in` walks the keys in the same order. Key order is ascending for numbers and follows declaration order for enumerators and fields. A key that does not exist, a key given twice, and a key left out are all errors.
+
+| Type | Keys | Gives |
 | --- | --- | --- |
 | `[array; 4]T` | a `u32` from 0 to 3 | `T` |
-| `[array; ?]T` | a `u32`, with the length taken from the initializer | `T` |
-| `[array; _]T` | a `u32`, with no length known | `T` |
+| `[array; ?]T` | a `u32` within a length counted from the initializer | `T` |
+| `[array; _]T` | a `u32` within a length unknown at compile time | `T` |
 | `[table; D]T` | a value of the domain or enum `D` | `T` |
 | `[vector; 4]T` | a lane | `T` |
 | `[matrix; 4]V` | a column | the column vector `V` |
@@ -94,15 +96,15 @@ Every type written `[kind; parameter]T` is indexed, and indexing it gives `T`. A
 
 ### Arrays
 
-Arrays are indexed by `u32`. `[array; _]T` has no length and is allowed only in storage memory. `[array; ?]T` takes its length from its initializer, as in `[array; ?]u32 { ...1..=4, 8, 16 }`.
+Arrays are indexed by `u32`. `[array; _]T` has no length and is allowed only in storage memory. The length of `[array; ?]T` is counted from the initializer, as in `[array; ?]u32 { ...1..=4, 8, 16 }`.
 
 Lengths allow arithmetic: `[array; N + M]T` and `[array; M + N]T` are the same type.
 
 ### Tables
 
-A table is like an array, except instead of being indexed by every value of an integer type, it's indexed by a domain of its own. The domain can be sparse and the table still has no holes, every element it stores is one you can index. Other languages tend to call this a sparse array, or an enumerated array when the domain is an enum. Once the domain can hold plain numbers and not just named enumerators, it becomes clear these were always the same thing, an indexable type with its own set of keys, a table.
+A table is similar to an array except the index is a domain of its own rather than every value of an integer type. Sparse domains are allowed and leave no holes in the storage underneath. Some languages would call this a sparse array and, when the domain is an enum, an enumerated array. Once numbers are allowed in a domain alongside named enumerators, both turn out to be one kind of indexable type, a table.
 
-Domains are where a lot of the good stuff comes from. Knowing every value something can take is what lets the compiler pick efficient code paths for high level code, and it's what our `requires` system is built on. Here's a blur kernel with taps from -2 to 2:
+The domain type in particular is what enables a lot of high level efficient code paths as well as the `requires` system. A blur kernel with taps from -2 to 2 is a small example:
 
 ```bento
 domain Tap : i32 { -2..=2 }
@@ -118,9 +120,9 @@ fn blur(row: [array; 64]f32, x: i32) -> f32 {
 }
 ```
 
-`WEIGHTS[-2]` through `WEIGHTS[2]` are the five taps, there's no padding and no offset to keep track of by hand. Only a `Tap` can index `WEIGHTS`, so passing some stray `i32` is an error rather than a bug you find later.
+The five taps are `WEIGHTS[-2]` through `WEIGHTS[2]` without any padding or offset tracked by hand. A stray `i32` used as an index is a compile error instead of a bug found later since only a `Tap` is accepted.
 
-Indexing with a `Tap` known only at run time is where the domain earns its keep. You write the tap you mean, `-2` through `2`, and the compiler adds the `+2` that turns it into a slot. When the tap is constant there's nothing left to do at run time, the lookup folds to the weight itself, and a `const for` over every tap folds the whole sum away:
+For a `Tap` known only at run time, the `+2` that turns a tap into a slot is inserted automatically. A constant tap is folded to the weight itself. The sum in `total` disappears entirely once the `const for` over every tap is unrolled:
 
 ::: pair
 ```bento before
@@ -167,9 +169,9 @@ fn @total() -> f32 export
 ```
 :::
 
-`const for t in Tap` unrolls once for every value of the domain with `t` already a `Tap`, so there's no counter to step past the end and sparse domains walk just as well. Elements are stored in ascending order of value, or declaration order for an enum, and that's the order initializers, spreads, and `for ... in` see. Nothing else ever shows you where an element lives, a `Tap` is always its value and never a slot. When the domain is one range, indexing costs a subtraction, or nothing at all when it starts at 0. Sparse domains are a lookup, and constant indices fold away entirely.
+In `const for t in Tap` the variable is already a `Tap` and no counter exists to step past the end. Sparse domains are walked the same way. Elements are stored in key order without the slot ever being exposed, and `t as i32` is always the value written in the domain. Indexing a table over a single range costs a subtraction, or nothing at all for a range starting at 0. Sparse domains are looked up and constant indices are folded.
 
-Enums work the same way, with `.Name` picking the enumerator just like anywhere else the enum is known:
+Tables over an enum are indexed by enumerator with `.Name` resolved as anywhere else the enum is known:
 
 ```bento
 enum Axis { X, Y, Z }
@@ -183,6 +185,17 @@ fn weight(axis: Axis) -> f32 {
 	return BLUR[axis];
 }
 ```
+
+Range keys suit step functions and lookup tables, where runs of keys share one value:
+
+```bento
+domain Level : u32 { 0..<16 }
+
+const FALLOFF = [table; Level]f32 { 0..<4 = 1.0, 4..<12 = 0.5, 12..<16 = 0.0 };
+const SPREAD = [table; Axis]f32 { .Z = 0.25, .X = 0.25, .Y = 0.5 };
+```
+
+Positional and keyed values are not mixed in one initializer. Overlapping ranges count as a key given twice.
 
 ### Other types
 
