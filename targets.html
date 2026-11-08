@@ -82,29 +82,37 @@ No API has holes in its bindings when a module contains a single program and eve
 
 ## Bindless
 
-Stored handles are 8 bytes. In Vulkan and Direct3D 12 they are indices, either into descriptor arrays and tables or into descriptor heaps. In OpenGL and Metal they are handles defined by the API.
+Bindless comes in two models, *explicit bindless* and *implicit bindless*, and why there are two is on the [bindings and bindless](bindless.html) page. This section is how each API is set up for them.
 
-| API | Stored handle | Sampled textures |
-| --- | --- | --- |
-| Vulkan, descriptor indexing | a `u32` index into the descriptor array for that kind, then zero | joined or combined |
-| Vulkan, descriptor heaps | a `u32` index into the descriptor heap, then zero | joined or combined |
-| Direct3D 12, descriptor tables | a `u32` index into the descriptor range for that kind, then zero | joined |
-| Direct3D 12, descriptor heaps | a `u32` index into the CBV, SRV, and UAV heap or into the sampler heap, then zero | joined |
-| OpenGL | the handle from `glGetTextureHandleARB`, `glGetImageHandleARB`, or `glGetTextureSamplerHandleARB` | combined |
-| Metal | the `gpuResourceID` | joined |
+### Implicit bindless
 
-Stored sampled textures are 16 bytes. Joined sampled textures are the stored handle of the texture followed by the stored handle of the sampler and are joined in the shader. Combined sampled textures are one stored handle for both followed by 8 bytes of zero. The handle is made on the host from a combined image sampler in Vulkan or with `glGetTextureSamplerHandleARB` in OpenGL. Samplers cannot be stored alone in OpenGL.
+Handles stored in buffers are 8 bytes:
 
-The descriptors behind the handles are set up as follows:
+| API | Stored handle |
+| --- | --- |
+| Vulkan | a `u32` index into the descriptor array for that kind, then zero |
+| Direct3D 12 | a `u32` index into the descriptor range for that kind, then zero |
+| OpenGL | the handle from `glGetTextureHandleARB`, `glGetImageHandleARB`, or `glGetTextureSamplerHandleARB` |
+| Metal | the `gpuResourceID` |
 
-- Vulkan with descriptor indexing: the descriptor arrays are sampled images at binding 0, storage images at binding 1, samplers at binding 2, and combined image samplers at binding 3 of set 3. Create each as a runtime array with descriptor indexing.
-- Vulkan with descriptor heaps: the indices are into the heaps of `VK_EXT_descriptor_heap`.
-- Direct3D 12 with descriptor tables: the descriptor ranges are an unbounded SRV range from `t0`, an unbounded UAV range from `u0`, and an unbounded sampler range from `s0` of space 3.
-- Direct3D 12 with descriptor heaps: the indices are into the two heaps set with `SetDescriptorHeaps`. Create the root signature with `D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED` and `D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED`.
+Stored sampled textures are 16 bytes, the stored handle of the texture followed by the stored handle of the sampler, and are joined in the shader. OpenGL has one handle for both from `glGetTextureSamplerHandleARB`, followed by 8 bytes of zero, and samplers cannot be stored alone there.
+
+- Vulkan: the descriptor arrays are sampled images at binding 0, storage images at binding 1, samplers at binding 2, and combined image samplers at binding 3 of set 3. Create each as a runtime array with descriptor indexing. With `bento-llc --vk-combined-image-samplers` or `vk_combined_image_samplers` set in `BTOGenOptions`, a stored sampled texture is instead an index into the combined image samplers followed by 8 bytes of zero and cannot be joined in the shader.
+- Direct3D 12: the descriptor ranges are an unbounded SRV range from `t0`, an unbounded UAV range from `u0`, and an unbounded sampler range from `s0` of space 3.
 - OpenGL: make every handle resident with `glMakeTextureHandleResidentARB` or `glMakeImageHandleResidentARB` before drawing.
 - Metal: create samplers with `supportArgumentBuffers` and make every texture and sampler resident with `useResource` or a residency set.
 
-In generated code a handle in Vulkan is an index into the descriptor array or heap and is decorated `NonUniform` when it is not uniform. In Direct3D 12 the handle is made with `createHandleFromBinding` from a descriptor range or with `createHandleFromHeap` from a heap and is marked non-uniform when it is not uniform. `createHandleFromHeap` is the operation behind `ResourceDescriptorHeap` and `SamplerDescriptorHeap` in HLSL. In OpenGL the handle is converted with `ARB_bindless_texture` in GLSL and `SPV_NV_bindless_texture` in SPIR-V. Handles that are not uniform are an error in OpenGL.
+In generated code a handle in Vulkan is an index into the descriptor array for its kind, decorated `NonUniform`. In Direct3D 12 it is made with `createHandleFromBinding` from the range for its kind and marked non-uniform. In OpenGL it is converted with `ARB_bindless_texture` in GLSL and `SPV_NV_bindless_texture` in SPIR-V.
+
+### Explicit bindless
+
+A struct bound with `[[constant(n), heap]]` lives in the descriptor heap, and constant buffer `n` contains the `u32` slot where it starts. A struct of resources is in the resource heap and a struct of samplers in the sampler heap. Its fields are at consecutive slots in order, and arrays are one slot per element.
+
+- Direct3D 12: the slots are in the heaps set with `SetDescriptorHeaps`. Create the root signature with `D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED` and `D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED`, and make `bn` of space 0 a root constant. The handle is made with `createHandleFromHeap`, the operation behind `ResourceDescriptorHeap` and `SamplerDescriptorHeap` in HLSL.
+- Vulkan: the slots are in the heaps of `VK_EXT_descriptor_heap`, `imageDescriptorSize` bytes apart in the resource heap and `samplerDescriptorSize` bytes apart in the sampler heap. Map binding `n` of set 0 to push data with `VkShaderDescriptorSetAndBindingMappingInfoEXT`, along with every other set and binding of the pipeline, set 3 included. Heaps need the `vulkan1.1` environment or later for SPIR-V 1.2.
+- Metal 4: the slots are views of an `MTLTextureViewPool` or `MTLResourceViewPool`, and constant buffer `n` contains the pool's `baseResourceID`.
+
+On OpenGL, on Metal before Metal 4, and in the `vulkan1.0` environment there is no heap. `heap` is ignored there and constant buffer `n` contains the struct itself as implicit bindless handles, laid out by the rules of a constant buffer.
 
 ## SPIR-V
 

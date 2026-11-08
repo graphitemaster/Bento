@@ -425,7 +425,7 @@ The memory space is part of every reference type. Conversions between spaces are
 `&x` has the space of `x` and `*r` reads or writes through `r`. Fields, indices, and swizzles go through a reference without a `*`. References exist only as parameters and `let` bindings.
 
 ::: note
-References passed to one call never overlap. On targets without references, copying them in and out is exact.
+References passed to one call can overlap. A write through one of them is seen through the others. In GLSL, which has no references, calls left out of line use a static frame of per-invocation globals and a copy of the callee for every root.
 :::
 
 ```bento
@@ -619,6 +619,23 @@ Stored handles are ordinary values. They are copied into locals, structs, and ar
 Handles are converted to and from integers with `as`. Sampled textures are converted to `u32x4` and other handles to `u32x2` or `u64`. Integers packed into other data or read out of a texture become handles again this way. The integers are whatever handles the target uses and mean something different on each one. Converting an integer that is not a handle is undefined on the GPU.
 
 Handles bound to an entry point have no stored form and cannot be stored or converted. Neither can a single layer of a layered handle.
+
+A struct that contains only resources, or only samplers, can live in the descriptor heap instead, bound with `heap` on a constant buffer. The constant buffer contains the slot where the struct starts, and reading a texture from it is one fetch from the heap instead of a load and then a fetch.
+
+```bento
+struct Textures {
+	albedo: [array; 1024][texture; 2]f32,
+}
+
+struct Lookup {
+	[[constant(0), heap]] textures: Textures,
+	[[location(0), interpolate(.Flat)]] index: u32,
+}
+
+let texel = fs.textures.albedo[fs.index][0, 0];
+```
+
+Textures from a heap have no stored form either. A value cannot be both a texture from a heap and a texture loaded from a buffer. The two models and how each API does them are on the [bindings and bindless](bindless.html) page.
 
 ## Entry points and stages
 

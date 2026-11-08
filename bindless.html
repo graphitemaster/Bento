@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Bindings and bindless · Bento</title>
+	<meta name="description" content="Why resource binding and bindless are such a mess across Vulkan, Direct3D 12, Metal, and OpenGL, and how Bento makes one shader work on all of them.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Bindings and bindless
+
+::: note
+**Explicit bindless:** the shader reads a descriptor straight from a heap whose layout you control, at a slot it computes from where your struct starts.
+
+**Implicit bindless:** the shader loads an index from your buffer and uses it to read a descriptor from a table the API keeps.
+:::
+
+Getting a texture into a shader should be the easy part. It isn't. Every graphics API has its own idea of what a binding is, and once you go bindless they stop agreeing on almost anything, including what the things are called. This is what we learnt making one Bento shader work on all of them, and what Bento does about it.
+
+## Binding
+
+Even plain binding is a mess, and no two APIs agree on what a binding is:
+
+| API | Resources are bound through | Described up front by |
+| --- | --- | --- |
+| Vulkan | descriptor sets, addressed by set and binding | a pipeline layout |
+| Direct3D 12 | registers typed by the kind of view, `b`, `t`, `u`, and `s`, in register spaces | a root signature of descriptor tables, root descriptors, and root constants |
+| Metal | an argument table for each of buffers, textures, and samplers | nothing, the indices are the binding |
+| OpenGL | binding points for uniform and storage blocks, texture units, and image units | nothing, the units are the binding |
+
+Samplers are a mess of their own:
+
+| API | Textures and samplers |
+| --- | --- |
+| Vulkan | either combined, as a combined image sampler, or apart, as a sampled image and a sampler |
+| Direct3D 12 | always apart, with samplers in a descriptor heap of their own |
+| Metal | always apart |
+| OpenGL | always combined, as a GLSL sampler |
+
+Bento numbers every kind of resource separately from 0 and maps those numbers onto each API the same way every time:
+
+| Bento | Vulkan | Direct3D 12 | Metal | OpenGL |
+| --- | --- | --- | --- | --- |
+| `constant(n)` | set 0 | `bn, space0` | buffer table | uniform block binding |
+| `storage(n)` | set 0 | `un, space0` | buffer table | storage block binding |
+| `texture(n)` | set 1 | `tn, space1` | texture table | texture unit |
+| `image(n)` | set 1 | `un, space1` | texture table | image unit |
+| `sampler(n)` | set 2 | `sn, space2` | sampler table | none |
+
+The exact numbers, and how to set up each API for them, are under [bindings](targets.html#bindings) on the targets page.
+
+## Bindless
+
+Binding things one at a time doesn't scale to a scene with thousands of materials, and every API has landed on bindless as the answer. It comes in two models. The APIs all have different names for them that don't line up. In Bento they're *implicit bindless* and *explicit bindless*.
+
+### Implicit bindless
+
+With implicit bindless, a handle is stored in memory like any other value, and the shader has to load it before it can get to the resource. This is two indirections: loading the handle, then looking up the descriptor it leads to. This is what every API had first:
+
+- Vulkan has descriptor indexing, from `VK_EXT_descriptor_indexing` and core since Vulkan 1.2. Descriptors are in runtime arrays and the stored number is an index into them.
+- Direct3D 12 has descriptor tables with unbounded ranges, indexed with `NonUniformResourceIndex` when the index differs between threads.
+- OpenGL has `ARB_bindless_texture`, where the handle is a 64-bit value from `glGetTextureHandleARB` or `glGetImageHandleARB` that has to be made resident first.
+- Metal has argument buffers, where the `gpuResourceID` of a texture or sampler is written into an ordinary buffer.
+
+In Bento these are ordinary values. Images, textures, sampled textures, and samplers can be stored in buffers, loaded, copied, passed to functions, and converted to and from integers with `as`. Every handle is 8 bytes on every API, and a sampled texture is 16, the texture and then the sampler, joined in the shader. OpenGL is the exception with one handle for both, followed by 8 bytes of zero.
+
+```bento
+struct Material {
+	albedo: [sampled; 2]f32,
+	mask: [image; 2]f32,
+	tint: f32x4,
+}
+
+struct Shade {
+	[[storage(0)]] materials: [array; _]Material,
+	[[location(0), interpolate(.Flat)]] index: u32,
+}
+
+let material = fs.materials[fs.index];
+let texel = material.albedo[0, 0] * material.tint;
+```
+
+### Explicit bindless
+
+Explicit bindless skips the load. The descriptors live in a descriptor heap and the shader computes the slot it wants. This is one indirection:
+
+- Direct3D 12 has `ResourceDescriptorHeap` and `SamplerDescriptorHeap` from Shader Model 6.6. The root signature needs `D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED` and `D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED`.
+- Vulkan has `VK_EXT_descriptor_heap`, a resource heap and a sampler heap read through `ResourceHeapEXT` and `SamplerHeapEXT` in SPIR-V.
+- Metal 4 has `MTLResourceViewPool` and `MTLTextureViewPool`. The resource IDs of a pool are contiguous from its `baseResourceID`, and the ID of each slot is the base plus the slot.
+- OpenGL has nothing like it.
+
+This is the modern way and what new code should use. It removes the indirection, and with the starting slot in a root constant or in push data, nothing is loaded from memory to find a resource at all.
+
+You'd think a heap in this day and age would let you put anything in it, the way a Metal argument buffer does. It doesn't, and there's a reason. On hardware like NVIDIA's the texture unit reads descriptors from a fixed pool for resources and a smaller one for samplers, and a heap is pretty much that pool handed to you. That's why there are two heaps, why the sampler heap is so small, why a heap can only contain descriptors, and why shaders can't write to one. Even the size of a descriptor differs between GPUs, and Vulkan has you ask with `OpConstantSizeOfEXT` instead of assuming it.
+
+## Heaps in Bento
+
+A struct that contains only resources, or only samplers, is bound as a heap with `heap` on a constant buffer:
+
+```bento
+struct Textures {
+	albedo: [array; 1024][texture; 2]f32,
+	masks: [array; 64][image; 2]f32,
+}
+
+struct Filters {
+	linear: sampler,
+	nearest: sampler,
+}
+
+struct Draw {
+	[[constant(0), heap]] textures: Textures,
+	[[constant(1), heap]] filters: Filters,
+	[[location(0), interpolate(.Flat)]] which: u32,
+}
+
+[[stage(.Fragment)]]
+fn shade(fs: Draw) -> Pixel {
+	let albedo = [sampled; 2]f32 { fs.textures.albedo[fs.which], fs.filters.linear };
+	return { albedo[1, 2] };
+}
+```
+
+Constant buffer 0 doesn't contain the textures. It contains one `u32`, the slot where `Textures` starts in the resource heap. Every field and index after that is arithmetic on the slot. A struct of samplers works the same way in the sampler heap. Reading `fs.textures.albedo[fs.which]` is:
+
+| API | Read | Where the starting slot comes from |
+| --- | --- | --- |
+| Direct3D 12 | `ResourceDescriptorHeap[base + which]` | a root constant |
+| Vulkan | slot `base + which` of `ResourceHeapEXT` | push data |
+| Metal 4 | resource ID `base + which` | the pool's `baseResourceID` |
+
+Each draw sees one resource heap and one sampler heap, and every heap binding is a different starting slot in the same one. The rules follow from what a heap is:
+
+- A heap struct can only contain resources or samplers, never both and never data.
+- Sampled textures cannot be stored in a heap. The texture and the sampler are in different heaps and are joined in the shader from one of each.
+- Only constant buffers can be heaps, and a heap can't be assigned to.
+- Textures from a heap can't be stored in a buffer or converted with `as`. Anything loaded from a buffer is read as implicit bindless, so a heap slot written there would come back as an index into the descriptor arrays and find the wrong texture.
+
+## Mixing them
+
+Bound textures, implicit bindless, and explicit bindless can all be used in the same entry point:
+
+- Vulkan pipelines with descriptor heaps map every set and binding into the heap through `VkShaderDescriptorSetAndBindingMappingInfoEXT`.
+- Direct3D 12 root signatures can have descriptor tables next to direct heap indexing.
+- Metal 4 resolves resource IDs from argument buffers and from view pools the same way.
+
+What you can't do is make one value two kinds. A texture that comes from the heap on one path and from a buffer on the other would have to be merged into one image where the paths meet, and Vulkan doesn't allow an `OpPhi` or `OpSelect` of images. The only way around that would be a branch on every read. Bento reports it instead:
+
+```bento
+let t = fs.which > 3 ? fs.textures.albedo[0] : fs.materials[0].albedo;
+```
+
+```text
+error: a value cannot be both an explicit texture and an implicit texture
+```
+
+Functions don't have this problem. A function called with textures from the heap and with textures from buffers gets a copy of each, and inside each copy every texture is one kind.
+
+## Without heaps
+
+Some targets have no heap:
+
+- OpenGL.
+- Metal before Metal 4.
+- The Vulkan 1.0 environment, since heaps in SPIR-V need version 1.2.
+
+There `heap` is ignored and the constant buffer contains the struct itself as implicit bindless handles, laid out like any other constant buffer. The same shader runs everywhere and only gets the extra step where the API leaves no other choice.
+
+## Non-uniform indices
+
+Bindless indices that differ between threads of a simdgroup need marking:
+
+| API | Marking |
+| --- | --- |
+| Vulkan | `NonUniform` on the index and the descriptor in SPIR-V |
+| Direct3D 12 | `NonUniformResourceIndex` in HLSL, the non-uniform flag of the handle in DXIL |
+| Metal | none needed |
+| OpenGL | none with `NV_gpu_shader5`, and a waterfall loop over the distinct handles of the simdgroup without it |
+
+Getting it wrong is undefined, and with no marking at all the driver may use the index of the first thread for all of them. Bento marks every bindless index for now. Once the [uniformity](uniformity.html) analysis is in, only the ones it can't prove uniform are marked, and slots made of the starting slot and constants are uniform without it.
+</script>
+</body>
+</html>
