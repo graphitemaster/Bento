@@ -48,38 +48,6 @@
 </div>
 <img class="graphic" src="targets.svg" width="1520" height="680" alt="Bento, or your own language, node graph, or material graph, builds Bento IR, which is lowered to SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5 to 4.6, DXIL for DirectX 12, AIR for Metal 3 and 4, and GLSL for OpenGL 4.5 to 4.6 and OpenGL ES 3.1 to 3.2 as a fallback for OpenGL drivers without SPIR-V support.">
 
-<div class="section-head" id="example">
-	<h2>Example</h2>
-	<p>Fragment shader with a struct of inputs and a struct of outputs. Each field is bound through an attribute.</p>
-</div>
-<div class="tray">
-	<figure class="cell full">
-		<figcaption>hello.bento</figcaption>
-<pre data-lang="bento">import std;
-
-struct Pixel {
-	[[location(0)]] uv: f32x2,
-}
-
-struct Color {
-	[[color(0)]] rgba: f32x4,
-}
-
-[[stage(.Fragment)]]
-fn main(px: Pixel) -&gt; Color {
-	let corner = px.uv.x * px.uv.y;
-	let glow = std::smooth_step(0.0, 1.0, corner);
-	return { f32x4 { px.uv, glow, 1.0 } };
-}</pre>
-	</figure>
-	<figure class="cell full">
-		<figcaption>compiled to bytecode, then to GLSL or SPIR-V</figcaption>
-<pre data-lang="sh">bento-c hello.bento
-bento-llc hello.bbc
-bento-llc --target=spirv hello.bbc</pre>
-	</figure>
-</div>
-
 <div class="section-head" id="language">
 	<h2>Language</h2>
 	<p>Barriers, subgroups, and uniformity are concepts built into the language rather than thinly typed intrinsics bolted onto C. <a href="language.html">Language tour</a></p>

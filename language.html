@@ -75,7 +75,7 @@ domain Mip : f32 { 0.25, 0.5, 1.0 }
 
 The type of a domain is any integer or float type. Without one it is `u32` when no value is below 0, `i32` when one is, and `f32` when a value is a float literal. NaN is not allowed, and `0.0` and `-0.0` are the same value.
 
-A constant converts to a domain when its value is in it and is an error otherwise: `let t: Tap = 3;` does not compile. `as` converts a run-time value of the underlying type without a check, and a value outside the domain is undefined, as an index out of range is. `t as i32` gives the plain value back, and arithmetic works on the underlying type. An enum is a domain whose values have names.
+A constant converts to a domain when its value is in it and is an error otherwise: `let t: Tap = 3;` does not compile. `as` converts a run-time value of the underlying type without a check, and a value outside the domain is undefined, as an index out of range is. `t as i32` gives the plain value back for arithmetic, since domain values only convert out with `as`. An enum is a domain whose values have names.
 
 ### Indexed types
 
@@ -111,9 +111,8 @@ const WEIGHTS = [table; Tap]f32 { 0.0625, 0.25, 0.375, 0.25, 0.0625 };
 
 fn blur(row: [array; 64]f32, x: i32) -> f32 {
 	let sum: f32 = 0;
-	const for let i = -2; i <= 2; i += 1 {
-		const t: Tap = i;
-		sum += row[(x + i) as u32] * WEIGHTS[t];
+	const for t in Tap {
+		sum += row[(x + (t as i32)) as u32] * WEIGHTS[t];
 	}
 	return sum;
 }
@@ -141,8 +140,7 @@ export fn center() -> f32 {
 
 export fn total() -> f32 {
 	let sum: f32 = 0;
-	const for let i = -2; i <= 2; i += 1 {
-		const t: Tap = i;
+	const for t in Tap {
 		sum += WEIGHTS[t];
 	}
 	return sum;
@@ -169,7 +167,7 @@ fn @total() -> f32 export
 ```
 :::
 
-Elements are stored in ascending order of value, or declaration order for an enum, and that's the order initializers, spreads, and `const for` see. Nothing else ever shows you where an element lives, a `Tap` is always its value and never a slot. When the domain is one range, indexing costs a subtraction, or nothing at all when it starts at 0. Sparse domains are a lookup, and constant indices fold away entirely.
+`const for t in Tap` unrolls once for every value of the domain with `t` already a `Tap`, so there's no counter to step past the end and sparse domains walk just as well. Elements are stored in ascending order of value, or declaration order for an enum, and that's the order initializers, spreads, and `for ... in` see. Nothing else ever shows you where an element lives, a `Tap` is always its value and never a slot. When the domain is one range, indexing costs a subtraction, or nothing at all when it starts at 0. Sparse domains are a lookup, and constant indices fold away entirely.
 
 Enums work the same way, with `.Name` picking the enumerator just like anywhere else the enum is known:
 
