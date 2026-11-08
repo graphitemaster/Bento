@@ -71,13 +71,13 @@ In Bento these are ordinary values. Images, textures, sampled textures, and samp
 ```bento
 struct Material {
 	albedo: [sampled; 2]f32,
-	mask: [image; 2]f32,
-	tint: f32x4,
+	mask:   [image; 2]f32,
+	tint:   f32x4,
 }
 
 struct Shade {
-	[[storage(0)]] materials: [array; _]Material,
-	[[location(0), interpolate(.Flat)]] index: u32,
+	[[storage(0)]]                      materials: [array; _]Material,
+	[[location(0), interpolate(.Flat)]] index:     u32,
 }
 
 let material = fs.materials[fs.index];
@@ -104,18 +104,18 @@ A struct that contains only resources, or only samplers, is bound as a heap with
 ```bento
 struct Textures {
 	albedo: [array; 1024][texture; 2]f32,
-	masks: [array; 64][image; 2]f32,
+	masks:  [array; 64][image; 2]f32,
 }
 
 struct Filters {
-	linear: sampler,
+	linear:  sampler,
 	nearest: sampler,
 }
 
 struct Draw {
-	[[constant(0), heap]] textures: Textures,
-	[[constant(1), heap]] filters: Filters,
-	[[location(0), interpolate(.Flat)]] which: u32,
+	[[constant(0), heap]]               textures: Textures,
+	[[constant(1), heap]]               filters:  Filters,
+	[[location(0), interpolate(.Flat)]] which:    u32,
 }
 
 [[stage(.Fragment)]]

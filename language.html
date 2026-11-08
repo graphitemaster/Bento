@@ -503,8 +503,8 @@ Sampled textures are bound with `texture(n)`. Indexing a sampled texture reads a
 
 ```bento
 struct Surface {
-	[[texture(0)]] albedo: [sampled; 2]f32,
-	[[location(0)]] uv: f32x2,
+	[[texture(0)]]  albedo: [sampled; 2]f32,
+	[[location(0)]] uv:     f32x2,
 }
 
 let first = fs.albedo[0, 0];
@@ -516,8 +516,8 @@ Layered textures are written with `[layer; K]` before the texture, as in `[layer
 
 ```bento
 struct Terrain {
-	[[texture(0)]] albedo: [layer; 8][sampled; 2]f32,
-	[[location(0), interpolate(.Flat)]] layer: u32,
+	[[texture(0)]]                      albedo: [layer; 8][sampled; 2]f32,
+	[[location(0), interpolate(.Flat)]] layer:  u32,
 }
 
 fn read(t: [sampled; 2]f32, at: i32x2) -> f32x4 {
@@ -540,7 +540,7 @@ The samples of a multisampled texture are an array in the texel type. `[texture;
 
 ```bento
 struct Resolve {
-	[[position]] at: f32x4,
+	[[position]]   at:    f32x4,
 	[[texture(0)]] color: [texture; 2][array; 4]f32,
 }
 
@@ -571,9 +571,9 @@ Textures and samplers bound apart are combined in the shader. One texture can th
 
 ```bento
 struct Shade {
-	[[texture(0)]] albedo: [texture; 2]f32,
-	[[sampler(0)]] nearest: sampler,
-	[[location(0)]] uv: f32x2,
+	[[texture(0)]]  albedo:  [texture; 2]f32,
+	[[sampler(0)]]  nearest: sampler,
+	[[location(0)]] uv:      f32x2,
 }
 
 fn read(t: [sampled; 2]f32, at: i32x2) -> f32x4 {
@@ -600,14 +600,14 @@ Images, textures, sampled textures, and samplers can also be stored in buffers a
 ```bento
 struct Material {
 	albedo: [sampled; 2]f32,
-	mask: [image; 2]f32,
-	tint: f32x4,
+	mask:   [image; 2]f32,
+	tint:   f32x4,
 }
 
 struct Shade {
-	[[storage(0)]] materials: [array; _]Material,
-	[[location(0), interpolate(.Flat)]] index: u32,
-	[[location(1)]] uv: f32x2,
+	[[storage(0)]]                      materials: [array; _]Material,
+	[[location(0), interpolate(.Flat)]] index:     u32,
+	[[location(1)]]                     uv:        f32x2,
 }
 
 let material = fs.materials[fs.index];
@@ -628,8 +628,8 @@ struct Textures {
 }
 
 struct Lookup {
-	[[constant(0), heap]] textures: Textures,
-	[[location(0), interpolate(.Flat)]] index: u32,
+	[[constant(0), heap]]               textures: Textures,
+	[[location(0), interpolate(.Flat)]] index:    u32,
 }
 
 let texel = fs.textures.albedo[fs.index][0, 0];
@@ -656,14 +656,14 @@ No two fields of the parameter, or of the result, share a slot. Matrices use one
 
 ```bento
 struct Mesh {
-	[[attribute(0)]] position: f32x3,
-	[[attribute(1)]] uv: f32x2,
-	[[constant(0)]] transform: f32x4x4,
+	[[attribute(0)]] position:  f32x3,
+	[[attribute(1)]] uv:        f32x2,
+	[[constant(0)]]  transform: f32x4x4,
 }
 
 struct Varyings {
-	[[position]] position: f32x4,
-	[[location(0)]] uv: f32x2,
+	[[position]]    position: f32x4,
+	[[location(0)]] uv:       f32x2,
 }
 
 struct Lit {
@@ -715,7 +715,7 @@ Other contexts are declared with `context` and supplied in a `with` block to eve
 
 ```bento
 struct Camera {
-	view: f32x4x4,
+	view:       f32x4x4,
 	projection: f32x4x4,
 }
 
@@ -727,8 +727,8 @@ fn to_clip(p: f32x3) -> f32x4 with (camera: View) {
 
 struct Model {
 	[[attribute(0)]] position: f32x3,
-	[[attribute(1)]] uv: f32x2,
-	[[constant(0)]] camera: Camera,
+	[[attribute(1)]] uv:       f32x2,
+	[[constant(0)]]  camera:   Camera,
 }
 
 [[stage(.Vertex)]]
@@ -747,9 +747,9 @@ Inner `with` blocks shadow outer ones. Contexts are top-level declarations and a
 
 ```bento
 struct Shadowed {
-	[[scene(0)]] world: scene,
-	[[constant(1)]] sun: f32x3,
-	[[location(0)]] at: f32x3,
+	[[scene(0)]]    world: scene,
+	[[constant(1)]] sun:   f32x3,
+	[[location(0)]] at:    f32x3,
 }
 
 struct Lit {
@@ -789,7 +789,7 @@ import std;
 export struct Sun {
 	/// Unit vector toward the light.
 	direction: f32x3,
-	color: f32x3,
+	color:     f32x3,
 }
 
 export enum Mode { Flat, Lit }

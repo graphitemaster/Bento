@@ -178,9 +178,9 @@ Sampled textures are supported on every target. In Vulkan write the image view a
 
 ```bento
 struct Shade {
-	[[position]] at: f32x4,
-	[[texture(0)]] albedo: [sampled; 2]f32,
-	[[texture(1)]] normal: [texture; 2]f32,
+	[[position]]   at:      f32x4,
+	[[texture(0)]] albedo:  [sampled; 2]f32,
+	[[texture(1)]] normal:  [texture; 2]f32,
 	[[sampler(0)]] nearest: sampler,
 }
 
