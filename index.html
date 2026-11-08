@@ -50,32 +50,32 @@
 
 <div class="section-head" id="language">
 	<h2>Language</h2>
-	<p>Barriers, subgroups, and uniformity are concepts built into the language rather than thinly typed intrinsics bolted onto C. <a href="language.html">Language tour</a></p>
+	<p>Barriers, subgroups, uniformity, and uber shaders are concepts built into the language rather than thinly typed intrinsics and macros bolted onto C. <a href="language.html">Language tour</a>, <a href="uber.html">Uber shaders</a></p>
 </div>
 <div class="tray">
 	<div class="cell wide">
+		<h3>Uber shaders</h3>
+		<p>Features are declared once and read as constants anywhere. Bento checks every variant the <code>requires</code> clauses allow when the source is compiled and builds exactly those variants, from IR that is compiled only once.</p>
+	</div>
+	<div class="cell">
 		<h3>Uniformity analysis</h3>
-		<p>How widely every value is shared is proven during compilation for every rung from the whole dispatch down to one thread. Derivatives, simdgroup operations, and bindless indices are checked against it.</p>
+		<p>Bento proves how widely every value is shared and checks derivatives, simdgroup operations, and bindless indices against it.</p>
 	</div>
 	<div class="cell">
 		<h3>Automatic barriers</h3>
-		<p>Wherever workgroup memory written by one thread is read by another, a barrier is inserted in uniform code before the read.</p>
+		<p>Bento inserts a barrier wherever workgroup memory written by one thread is read by another.</p>
 	</div>
 	<div class="cell">
 		<h3>Context parameters</h3>
-		<p>Built-in values such as the thread id, and values defined in the shader, are available at any depth of the call chain through checked <code>with</code> clauses. There are no globals and no parameters passed by hand.</p>
+		<p>Built-in values are available at any depth of the call chain through checked <code>with</code> clauses, without any globals.</p>
 	</div>
 	<div class="cell">
 		<h3>Generics</h3>
-		<p>Bracket parameters with built-in bounds and structural interfaces. Generics are type checked once and can be exported through bytecode.</p>
-	</div>
-	<div class="cell">
-		<h3>Compile-time code</h3>
-		<p>Under the type checker, code is selected with <code>const if</code> and unrolled with <code>const for</code>. Modules and a linker are used in place of <code>#include</code>.</p>
+		<p>Generics have built-in bounds and structural interfaces, are type checked once, and can be exported through bytecode.</p>
 	</div>
 	<div class="cell full">
 		<h3>Memory spaces</h3>
-		<p>Every reference type includes the memory space: <code>&amp;thread</code>, <code>&amp;workgroup</code>, <code>&amp;storage</code>, or <code>&amp;constant</code>. Buffers and workgroup memory can be passed to functions on every target.</p>
+		<p>Every reference type includes its memory space. Buffers and workgroup memory can be passed to functions.</p>
 	</div>
 </div>
 
@@ -98,7 +98,7 @@
 	</div>
 	<div class="cell wide">
 		<h3>Optimizer</h3>
-		<p>Inlining, mem2reg, scalar replacement of aggregates, loop inversion, folding, if-conversion, CSE, dead store and redundant load elimination, aggressive dead code elimination, and load narrowing. Comprehensive rule-driven algebraic simplifications.</p>
+		<p>Inlining, mem2reg, scalar replacement of aggregates, loop inversion, folding, if-conversion, CSE, dead store and redundant load elimination, aggressive dead code elimination, and load narrowing. Comprehensive rule-driven algebraic simplifications. Competitive with <a href="https://github.com/KhronosGroup/SPIRV-Tools">spirv-opt</a> and with the highest optimization level of DXC.</p>
 	</div>
 	<div class="cell">
 		<h3>Library</h3>
@@ -123,7 +123,7 @@
 			<tbody>
 				<tr><td>Output</td><td>Lowered straight to SPIR-V, AIR, DXIL, or GLSL</td><td>SPIR-V directly, DXIL through DXC, and MSL, HLSL, GLSL, or WGSL source</td><td>glslang, DXC, Tint, or a transpiler in between</td></tr>
 				<tr><td>Reuse</td><td>Modules, imports, and a linker</td><td>Modules, precompiled modules, and <code>#include</code></td><td><code>#include</code></td></tr>
-				<tr><td>Variants</td><td>Type checked <code>const if</code>, <code>const for</code>, and generics</td><td>Generics, interfaces, link-time specialization, and preprocessor macros</td><td>Preprocessor macros</td></tr>
+				<tr><td>Variants</td><td>Features with checked <code>requires</code> clauses, <code>const if</code>, <code>const for</code>, and generics</td><td>Generics, interfaces, link-time specialization, and preprocessor macros</td><td>Preprocessor macros</td></tr>
 				<tr><td>Uniformity</td><td>Proven for every value and checked across modules</td><td>Opt-in checks of values marked <code>dynamic_uniform</code> by hand</td><td>Unchecked in GLSL and HLSL but checked for derivatives and barriers in WGSL</td></tr>
 				<tr><td>Barriers</td><td>Inserted automatically</td><td>Written by hand</td><td>Written by hand</td></tr>
 				<tr><td>Built-ins</td><td>Context parameters checked per stage</td><td>Semantics as in HLSL</td><td>Globals or semantics</td></tr>

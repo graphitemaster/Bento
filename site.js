@@ -9,6 +9,7 @@ var NAV = [
 	{ group: 'Language', pages: [
 		['language', 'Language tour'],
 		['uniformity', 'Uniformity'],
+		['uber', 'Uber shaders'],
 		['bindless', 'Bindings and bindless'],
 	] },
 	{ group: 'Infrastructure', pages: [
@@ -50,7 +51,8 @@ function rewrite(url) {
 	});
 }
 
-var BENTO_KEYWORDS = /^(fn|if|else|for|return|break|continue|discard|enum|struct|type|let|const|import|export|module|using|thread|simdgroup|workgroup|partgroup|quadgroup|dispatch|storage|constant|as|array|table|layer|domain|vector|matrix|image|texture|sampled|interface|context|with|requires)$/;
+var BENTO_KEYWORDS = /^(fn|if|else|for|return|break|continue|discard|enum|struct|type|let|const|import|export|module|using|thread|simdgroup|workgroup|partgroup|quadgroup|dispatch|storage|constant|as|domain|interface|context|with|requires|feature|in)$/;
+var BENTO_KINDS = /^(array|table|layer|vector|matrix|image|texture|sampled)$/;
 var BENTO_TYPES = /^(sampler|scene|r16|r32)$/;
 var GLSL_KEYWORDS = /^(layout|in|out|inout|uniform|buffer|struct|return|if|else|for|while|do|break|continue|discard|const|readonly|writeonly|restrict|coherent|flat|smooth|noperspective|shared|precision|highp|mediump|lowp|true|false|std140|std430|binding|location|set|local_size_x|local_size_y|local_size_z)$/;
 var GLSL_TYPES = /^(void|bool|int|uint|float|double|[biud]?vec[234]|mat[234](x[234])?|f16vec[234]|float16_t|u?int(8|16|64)_t|i?image[123]D|uimage[123]D|sampler[123]D)$/;
@@ -112,6 +114,8 @@ function bento(text) {
 		[/\b[A-Za-z_]\w*\b/y, function (word, all, end) {
 			if (attribute && depth === 0) return 'a';
 			if (BENTO_KEYWORDS.test(word)) return 'k';
+			if (BENTO_KINDS.test(word) && /\[\s*$/.test(all.slice(0, end - word.length))
+			 && /^\s*;/.test(all.slice(end))) return 'k';
 			if (BENTO_TYPES.test(word) || /^[A-Z][a-z0-9]\w*$/.test(word)) return 't';
 			return callee(word, all, end);
 		}],

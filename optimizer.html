@@ -13,50 +13,50 @@
 <script type="text/markdown">
 # Optimizer
 
-Every pass depends on two facts: control flow is structured and every instruction is pure, convergent, or impure. Convergent instructions are never moved into or out of control flow or copied where they would run on a different set of threads.
+Every pass in the optimizer is built on two facts about Bento's IR. The first is that control flow is always structured. Passes see each `if` and loop directly instead of recovering them from a graph of branches the way LLVM does. The second is that every instruction is pure, convergent, or impure. Convergent instructions such as derivatives, barriers, and simdgroup operations depend on which threads run them together and are never moved into or out of control flow or copied where they would run on a different set of threads.
 
 ## Passes
 
 mem2reg
-: Locals that are only loaded and stored whole are promoted to SSA values. The PHIs after each `if` and at the top and exit of each loop come from one ordered walk without dominance frontiers.
+: Locals that are only ever loaded and stored whole are promoted to SSA values. With structured control flow, the PHIs after each `if` and at the top and exit of each loop all come from one ordered walk, without the dominance frontiers LLVM's mem2reg computes.
 fold
-: Constants are folded through every operator and builtin and through `extract`, `insert`, `construct`, and loads of constant globals. `select`, `&&`, and `||` with one side known are settled. Under `nonans`, a NaN operand is folded as zero, and so is a result that would be NaN, such as the `sqrt` of a negative number or `x % 0.0`. Under `nosignedzero`, `min` and `max` of zeros of different signs are folded, and so is `sign(-0.0)`. `if`s with a known condition are replaced by the arm taken. Loops without a `continue` or an early `break` are replaced by the body. A block that a `br` leads to is merged into the block before it when both have the same fast-math flags.
+: Constants are folded through every operator and builtin, and through `extract`, `insert`, `construct`, and loads of constant globals. A `select`, `&&`, or `||` with one side known is settled on the spot. Under `nonans`, NaN operands and results that would be NaN, like the `sqrt` of a negative number or `x % 0.0`, fold to zero. Under `nosignedzero`, `sign(-0.0)` and the `min` and `max` of zeros with different signs fold. An `if` with a known condition is replaced by the arm that runs. A loop without a `continue` or an early `break` is replaced by its body. When a `br` leads to a block with the same fast-math flags as the block before it, the two are merged.
 algebra
-: Rewrites come from a table of rules and a few transforms written by hand. Which of them apply depends on the fast-math flags of the block.
+: Rewrites come from a table of rules plus a few transforms written by hand. The fast-math flags on each block decide which of them apply.
 cse
-: Instructions with the same opcode and operands as an earlier one are replaced by the earlier result. Convergent instructions are only merged within one block. Loads through a `&constant` reference count as pure. Calls are merged when the callee has no effects and reads only constant memory. PHIs are never merged.
+: An instruction with the same opcode and operands as an earlier one is replaced by the earlier result. Convergent instructions are only merged within a single block. Loads through a `&constant` reference count as pure. Calls are merged when the callee has no effects and reads nothing but constant memory. PHIs are never merged.
 dse, rle
-: Dead store and redundant load elimination share one walk over memory. Stores overwritten before any read are removed. Loads of a place with a known value are replaced by that value. What is known before an `if` is known again at the start of each arm. Nothing known is lost across a call to a function without effects.
+: Dead store and redundant load elimination share one walk over memory. A store that's overwritten before anything reads it is removed. A load of a place whose value is already known is replaced by that value. Whatever is known before an `if` is known again at the start of each arm. Nothing is forgotten across a call to a function without effects.
 narrow
-: Structs and arrays loaded only to read members at constant indices are replaced by loads of those members at any depth. Loads that read almost every lane stay whole.
+: When a struct or array is loaded only to read members at constant indices, the load is replaced by loads of just those members, at any depth. A load that reads almost every lane stays whole.
 dce
-: Dead code is found by mark and sweep: everything is dead until an effect needs it. Even values that only feed each other around a loop are removed. Whether a loop ends does not count as an effect.
+: Dead code is found by mark and sweep, the same aggressive approach as LLVM's ADCE. Everything starts out dead until an effect needs it. Even values that only feed each other around a loop are removed. Whether a loop ends doesn't count as an effect.
 inlining
-: Every callee body is copied into the callers, callees first. Bodies whose only `return` is last are spliced in place of the call. Other bodies are wrapped in a loop that runs once and each `return` becomes a `break` out of it. Returns inside a loop of the callee become a `break` of that loop and a flag tested after it. Functions marked `inline(false)` are never inlined. Functions marked `inline(true)` are inlined even when inlining is turned off, past the size budget up to a fixed ceiling.
+: Every call is inlined, starting from the callees and working up to the callers. A body whose only `return` is its last statement is spliced in place of the call. Any other body is wrapped in a loop that runs once. Each `return` becomes a `break` out of it. A `return` inside one of the callee's own loops becomes a `break` of that loop and a flag tested after it. Functions marked `inline(false)` are never inlined. Functions marked `inline(true)` are inlined even with inlining turned off, and past the size budget up to a fixed ceiling.
 ifconv
-: When both arms of an `if` only compute a few values that are safe to compute either way, both arms are run and the results are chosen with `select`. Divisions by a run-time value, conversions of a float to an integer, and reads at a run-time index are never moved out of an arm.
+: When both arms of an `if` only compute a few values that are safe to compute either way, both arms run and `select` chooses the results, trading a branch for a little extra arithmetic. Divisions by a run-time value, conversions of a float to an integer, and reads at a run-time index are never moved out of an arm.
 invert
-: Loops that test at the top become an `if` on the test around a loop that tests at the bottom. The test is copied in front of every `continue`. Tests with effects or convergent instructions are never copied. The `if` takes the uniformity scope of the loop. Code hoisted out of the loop goes inside the `if`, where the body is known to run at least once.
+: A loop that tests at the top becomes an `if` on the test wrapped around a loop that tests at the bottom, with the test copied in front of every `continue`. Tests with effects or convergent instructions are never copied. The `if` inherits the uniformity scope of the loop. Code hoisted out of the loop goes inside the `if`, where the body is known to run at least once.
 sroa
-: Structs, and arrays never indexed at run time, are split into one value per leaf. Types with many leaves stay whole.
+: Structs, and arrays that are never indexed at run time, are split into one value per leaf. Types with many leaves stay whole.
 licm and sinking
-: Pure instructions with every operand defined outside a loop are hoisted out of it. Out of an inverted loop, instructions unsafe to run when the loop never runs are hoisted too. Pure instructions used in only one arm are sunk into it.
+: Pure instructions whose operands are all defined outside a loop are hoisted out of it. Out of an inverted loop, even instructions that would be unsafe to run if the loop never ran are hoisted, since they end up inside the `if` that guards it. A pure instruction used in only one arm is sunk into that arm.
 unrolling
-: Loops with a trip count known after folding are unrolled whole below a size limit.
+: Loops with a trip count known after folding are unrolled completely when they're under a size limit.
 loop fusion and fission
-: Neighboring loops with the same trip count are joined. Loops are split by fission to ease register pressure. Neither is done across a barrier.
+: Neighboring loops with the same trip count are joined into one. Fission splits loops apart to ease register pressure. Neither is done across a barrier.
 
-The order is inlining, mem2reg, SROA, loop inversion, fold and algebra, if-conversion, CSE, the memory walk, fold and algebra again, DCE, and then load narrowing. CSE comes before the memory walk. Equal access chains count as one pointer only once merged. Load narrowing comes last, after DCE has removed dead reads.
+The passes run in this order: inlining, mem2reg, SROA, loop inversion, fold and algebra, if-conversion, CSE, the memory walk, fold and algebra again, DCE, and finally load narrowing. CSE runs before the memory walk because two equal access chains only count as one pointer once they've been merged. Load narrowing runs last so that DCE has already removed the dead reads.
 
 ## Algebra
 
-Exact rewrites always apply. Others are legal only under a fast-math flag set on the block: `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, or `nosignedzero`. The rules are a plain table of C macros:
+Exact rewrites always apply. The rest are only legal under a fast-math flag set on the block: `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, or `nosignedzero`. Where LLVM's InstCombine writes each rewrite by hand in C++, Bento's rules are a plain table of C macros:
 
 ```c
 RULE(OP(BAND, IF(ONCE, BNOT, A), IF(ONCE, BNOT, B)), OP(BNOT, OP(BOR, A, B)), 0)
 ```
 
-By this rule, `~a & ~b` is rewritten to `~(a | b)` when neither `~` has another use. Commutative operators are matched either way around.
+This rule rewrites `~a & ~b` to `~(a | b)` when neither `~` has another use. Commutative operators match either way around.
 
 ::: pair
 ```bento before
@@ -130,13 +130,13 @@ fn @lanes(f32x4) -> f32x3
 ```
 :::
 
-Division of 32-bit integers by a constant becomes a multiply by a magic number and a shift as in Hacker's Delight. For a power of two, a shift is used instead. Lossless conversions are dropped from a chain: on an `i16`, `(x as i32) as i64` is one conversion. After an `if` with nothing but a `yield` in each arm, PHIs of scalars and vectors become a `select` on the condition.
+Division of a 32-bit integer by a constant turns into a multiply by a magic number and a shift, as in Hacker's Delight, and division by a power of two becomes a shift instead. Lossless conversions are dropped from a chain. On an `i16`, `(x as i32) as i64` is a single conversion. After an `if` with nothing but a `yield` in each arm, PHIs of scalars and vectors become a `select` on the condition.
 
-Cases left undefined by GLSL or by integer arithmetic are never folded: a `clamp` with the low bound above the high bound, the `min` and `max` of a NaN or of zeros of different signs, `sign(-0.0)`, division by zero, and the `abs` of the most negative integer. Rewriting `!(a < b)` to `a >= b` needs `nonans`.
+Cases that GLSL or integer arithmetic leave undefined are never folded, since folding them would fix one answer at compile time where the hardware is free to give another. Those cases are a `clamp` with the low bound above the high bound, the `min` and `max` of a NaN or of zeros with different signs, `sign(-0.0)`, division by zero, and the `abs` of the most negative integer. Rewriting `!(a < b)` to `a >= b` needs `nonans`, because the two disagree when either side is NaN.
 
-The square root of an `f16` or `f32` constant is folded to the correctly rounded result. GPUs are allowed a few ulp of error in `sqrt`. Folded roots can differ in the last place from roots computed at run time.
+The square root of an `f16` or `f32` constant folds to the correctly rounded result. GPUs are allowed a few ulp of error in `sqrt`. A folded root can differ in the last place from one computed at run time.
 
-With `allowcontract`, multiply-add pairs become one `fma`:
+With `allowcontract`, a multiply followed by an add becomes one `fma`:
 
 ```ir bento-c --fast=nonans,allowcontract --opt mad.bento
 fn @mad(f32, f32, f32) -> f32 export
@@ -145,11 +145,11 @@ fn @mad(f32, f32, f32) -> f32 export
 	return %r12
 ```
 
-Flags are saved in the bytecode and preserved by every later tool.
+The flags are saved in the bytecode. Every later tool preserves them.
 
 ## Custom passes
 
-Passes map a module to a module the verifier accepts. The base shared by the passes in `bto_opt_pass.h` is a replace table with one entry per value, a change count, and an editor for inserting instructions without disturbing the walk.
+A pass maps a module to another module the verifier accepts. The passes and the lowering passes of the code generators all share a base in `bto_ir_pass.h`. It's made of a replace table with one entry per value, a change count, and an editor for inserting instructions without disturbing the walk.
 </script>
 </body>
 </html>

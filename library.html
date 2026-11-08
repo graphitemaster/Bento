@@ -15,20 +15,20 @@
 
 ## Host interface
 
-Bento depends on nothing, not even the freestanding C headers. It can be compiled with `-nostdinc` and for WebAssembly. Memory, files, and diagnostics are provided by the host through tables of callbacks.
+Bento builds with `-nostdinc` and for WebAssembly because it depends on nothing, not even the freestanding C headers. The library never calls `malloc` or opens a file on its own. You provide memory, files, and diagnostics through tables of callbacks.
 
 BTOAllocator
-: `alloc`, `realloc`, and `free`. The alignment is passed to each and the old size to the last two. Simple allocators need no records.
+: `alloc`, `realloc`, and `free`. Each one is given the alignment. The last two are also given the old size. A simple allocator has no bookkeeping of its own to do.
 BTOFilesystem
-: `open`, `close`, `query`, `read`, `write`, and `abspath`. `query` gives the size of a file, or returns false when the size is unknown. The filesystem is optional and is used for nothing but absolute source paths in diagnostics.
+: `open`, `close`, `query`, `read`, `write`, and `abspath`. `query` returns the size of a file, or false when the size isn't known. The filesystem is optional. The library only uses it to make source paths in diagnostics absolute.
 BTOReporter
-: `display` is called with each diagnostic as it is reported.
+: `display` is called with each diagnostic as soon as it's reported.
 
-There is no mutable global state: every table in the library is a `static const` and all state is in the context and in objects owned by the host. Every file is compiled without warnings as C11 and as C++11 under `-Wall -Wextra -pedantic`.
+There's no mutable global state anywhere. Every table in the library is a `static const`. All state lives in the context and in objects you own. Every file compiles without warnings as both C11 and C++11 under `-Wall -Wextra -pedantic`.
 
 ## Compiling at run time
 
-Complete program compiling a source string to GLSL or SPIR-V in a buffer:
+Here's a complete program that compiles a source string to GLSL or SPIR-V in a buffer:
 
 ```c embed.c
 #include <stdio.h>
@@ -108,9 +108,11 @@ int main(int argc, char** argv) {
 		status = bto_ir_verify(&module, &context);
 	if (status == BTO_STATUS_OK)
 		status = bto_opt(&module, BTO_OPT_ALL, &stats, &context);
+	BTOString name = bto_string_make((BTOUint8*)target, strlen(target));
 	if (status == BTO_STATUS_OK)
-		status = bto_gen(bto_string_make((BTOUint8*)target, strlen(target)),
-			&module, &options, &out.stream, &context);
+		status = bto_gen_lower(&module, bto_gen_lowering(name, &options), &context);
+	if (status == BTO_STATUS_OK)
+		status = bto_gen(name, &module, &options, &out.stream, &context);
 	if (status == BTO_STATUS_OK)
 		status = bto_buffer_stream_result(&out, &code);
 	if (status == BTO_STATUS_OK)
@@ -131,6 +133,8 @@ cc -std=c11 -Wall -Wextra -pedantic embed.c -o embed
 
 ## Public stages
 
+Every stage of the compiler is public.
+
 | Stage | Entry points |
 | --- | --- |
 | Context | `bto_context_init`, `bto_context_fini`, `bto_acquire_scratch`, `bto_release_scratch` |
@@ -145,34 +149,34 @@ cc -std=c11 -Wall -Wextra -pedantic embed.c -o embed
 | Generators | `bto_gen` and each target separately |
 | Streams | memory, file, and growing buffer streams |
 
-Imports are modules in memory. Prebuilt modules such as `std.bbc` are read by the host, loaded with `bto_ir_image_read`, verified, and passed to `bto_sema` as imports of a shader compiled at run time. The two are then linked with `bto_link`, optimized, and generated as above.
+Imports are modules in memory. To use a prebuilt module like `std.bbc`, you read the file yourself, load it with `bto_ir_image_read`, verify it, and pass it to `bto_sema` as an import of the shader you're compiling at run time. The standard library is never parsed or type checked again. After that, link the two with `bto_link`, then optimize and generate code as above.
 
 ## Memory
 
-Each AST and each IR module has a separate arena and is freed in one call. The IR contains no pointers into the AST or the source. Working memory is acquired from scratch arenas of the context with `bto_acquire_scratch` and given back with `bto_release_scratch`. `bto_context_fini` returns false when a scratch arena was never given back. In the program above, no new allocations are made while verifying, optimizing, and writing GLSL.
+Each AST and each IR module has an arena of its own and is freed in one call. The IR has no pointers into the AST or the source. Working memory comes from scratch arenas in the context, acquired with `bto_acquire_scratch` and given back with `bto_release_scratch`. If a scratch arena was never given back, `bto_context_fini` returns false. In the program above, verifying, optimizing, and writing GLSL make no new allocations.
 
-Running out of memory is an ordinary error. The first failed allocation is reported once and every stage returns `BTO_STATUS_OOM` from then on. When every allocation of a full build is failed in turn, one run at a time, each run ends cleanly without leaks.
+Running out of memory is an ordinary error, the same as any other. The first failed allocation is reported once. Every stage returns `BTO_STATUS_OOM` from then on. If every allocation of a full build is made to fail in turn, one run at a time, each run still ends cleanly without leaks.
 
 ## Threads
 
-A context is never shared between threads. One thread may use several contexts. Scratch memory never leaves the stage that acquired it, and nothing a stage returns refers to its context. An AST or an IR module holds no context, so it can be handed to another thread with its arena and used there with that thread's context. Contexts on different threads may share a `BTOSystem` and a `BTOReporter` when the allocator and the reporter are safe to call from those threads.
+A context is never shared between threads, but one thread can use several contexts. Scratch memory never leaves the stage that acquired it. Nothing a stage returns refers back to its context. ASTs and IR modules don't store a context either. You can hand one to another thread along with its arena and use it there with that thread's context. Contexts on different threads can share a `BTOSystem` and a `BTOReporter`, as long as your allocator and reporter are safe to call from those threads.
 
 ## Untrusted input
 
-No source and no bytecode may crash the library, hang it, or exhaust the memory.
+No source and no bytecode can crash the library, hang it, or exhaust its memory. That matters as soon as you compile shaders you didn't write yourself.
 
-- Nesting depth and the height of the tree built from long chains of operators, calls, and `else if` arms are limited during parsing. Exceeding either is an error rather than a stack overflow.
+- Parsing limits the nesting depth and the height of the tree built from long chains of operators, calls, and `else if` arms. Going past either one is an error, not a stack overflow.
 - Every offset, length, and alignment in an image is checked before any of them is trusted.
-- No pass or generator is run on a module until it is verified.
+- No pass or generator runs on a module until it's been verified.
 - Every loop over input is bounded and every allocation is checked.
 
-`make -C test fuzz` builds a libFuzzer harness over the lexer, the parser, the checker, and the bytecode reader. Bytecode accepted by the verifier is put through every pass, the linker, and every generator and has to pass verification again. Inside the fuzzer, the library runs under a fixed memory budget and huge requests fail inside Bento.
+`make -C test fuzz` builds a libFuzzer harness over the lexer, the parser, the checker, and the bytecode reader. Bytecode the verifier accepts is then put through every pass, the linker, and every generator and has to pass verification again at the end. Inside the fuzzer the library runs under a fixed memory budget. Huge requests fail inside Bento.
 
-Inputs that crash the library, hang it, or slip past an out of memory report are worth up to $500 USD under the [bug bounty](bounty.html).
+Any input that crashes the library, hangs it, or slips past an out of memory report is worth up to $500 USD under the [bug bounty](bounty.html).
 
 ## Single header
 
-The single header `bento.h` is generated with `make unified` and follows the stb convention. The API is declared wherever the header is included but the implementation is compiled into exactly one file by defining `BENTO_IMPLEMENTATION` before the include.
+`bento.h` is a single stb-style header generated with `make unified`. The API is declared wherever you include the header. The implementation is compiled into exactly one file, the one where you define `BENTO_IMPLEMENTATION` before the include.
 
 ::: note
 Other build options are documented in the Makefile.

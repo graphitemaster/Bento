@@ -72,9 +72,9 @@ a:hover {
 .soon {
 	background: var(--tamago);
 	color: var(--kiln);
-	font: 600 0.85rem var(--mono);
+	font: 700 1.15rem var(--mono);
 	text-align: center;
-	padding: 0.45rem 1.5rem;
+	padding: 0.9rem 1.5rem;
 }
 
 /* header: the tray lid */
@@ -198,6 +198,13 @@ dt code {
 	border: 1px solid var(--seam);
 	border-radius: 3px;
 	padding: 0.05em 0.35em;
+}
+
+p code,
+li code,
+dd code,
+dt code {
+	white-space: nowrap;
 }
 
 pre {
@@ -733,6 +740,19 @@ figure.code .copy:focus {
 }
 
 @media (max-width: 40rem) {
+	p code,
+	li code,
+	dd code,
+	dt code {
+		white-space: normal;
+		overflow-wrap: anywhere;
+	}
+
+	.soon {
+		font-size: 1rem;
+		padding: 0.75rem 1rem;
+	}
+
 	.cell,
 	.cell.wide,
 	.cell.half {

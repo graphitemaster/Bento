@@ -14,27 +14,27 @@
 # Tools
 
 bento-c
-: Compiler from source to bytecode. The syntax tree, the IR, or generated code is printed on request.
+: Compiles source to bytecode and prints the syntax tree, the IR, or generated code on request.
 bento-link
-: Linker for modules. Imports that no given module exports are left for a later link.
+: Links modules together. Imports that none of the given modules export are left for a later link.
 bento-opt
-: Optimizer with every pass and a count of the changes made by each.
+: Runs every pass of the optimizer and counts the changes each one makes.
 bento-llc
-: Code generator for SPIR-V, AIR, DXIL, GLSL, and C source that rebuilds the module through the library.
+: Generates SPIR-V, AIR, DXIL, or GLSL from a module, or C source that rebuilds the module through the library.
 bento-dis
-: Disassembler from bytecode to IR text.
+: Disassembles bytecode to IR text.
 bento-val
-: Validator for modules. Only the first problem in a module is reported.
+: Validates modules and reports only the first problem in each one.
 bento-strip
-: Stripper for the file table and every location.
+: Strips the file table and every location from a module.
 bento-lsp
 : Language server for diagnostics, hover, definitions, and outlines.
 
-`-` in place of any file means stdin or stdout. Every tool prints its options with `--help`. The exit status is 0 on success, 1 after a reported failure, and 2 for a bad command line.
+Any file can be given as `-` to read from stdin or write to stdout. Every tool prints its options with `--help` and exits with 0 on success, 1 after a reported failure, and 2 for a bad command line.
 
 ## Example with two modules
 
-Library module with a constant and two exported functions:
+The example has two modules. The first is a library that exports a constant and two functions:
 
 ```bento tone.bento
 /// Tone mapping, shared by every post pass.
@@ -57,7 +57,7 @@ export fn aces(x: f32x3) -> f32x3 {
 }
 ```
 
-The shader imports `tone` and has two entry points: a compute shader for grading a buffer of pixels and a fragment shader for drawing in gray.
+The second is a shader that imports `tone`. It has two entry points: a compute shader that grades a buffer of pixels and a fragment shader that draws in gray.
 
 ```bento post.bento
 import std;
@@ -91,14 +91,14 @@ fn gray(fs: Input) -> Output {
 
 ### Compiling
 
-Each module is compiled alone against the bytecode of the modules it imports. Imports are found as `name.bbc` in the current directory or along each `-i` path.
+Each module is compiled on its own against the bytecode of the modules it imports. `bento-c` looks for an import as `name.bbc` in the current directory or along each `-i` path.
 
 ```sh
 bento-c tone.bento
 bento-c post.bento
 ```
 
-Code is not generated for a module with unresolved imports:
+`bento-llc` won't generate code for a module that still has unresolved imports:
 
 ```text bento-llc post.bbc --entry=gray
 post.bbc: error: 'tone::luma' is imported and cannot be called until the module that exports it is linked
@@ -110,7 +110,7 @@ post.bbc: error: 'tone::luma' is imported and cannot be called until the module 
 bento-link -o program.bbc post.bbc tone.bbc std.bbc
 ```
 
-Names are prefixed with the module name. Structs and enums merge by qualified name and must match. Importers have to be compiled again when an export they were compiled against now allows fewer stages or needs more uniform regions.
+The linker prefixes names with the name of their module. Structs and enums merge by qualified name and have to match. When an export now allows fewer stages or needs more uniform regions than it did when an importer was compiled against it, that importer has to be compiled again.
 
 ### Optimizing
 
@@ -118,7 +118,7 @@ Names are prefixed with the module name. Structs and enums merge by qualified na
 bento-opt program.bbc -o opt.bbc
 ```
 
-Counts of changes go to stderr and stdout stays free for a pipe.
+The counts of changes go to stderr because stdout has to stay free for a pipe.
 
 ### Generating code
 
@@ -144,7 +144,7 @@ bento-strip opt.bbc -o ship.bbc
 
 ### Pipes
 
-The same steps through pipes give byte-identical output:
+Running the same steps through pipes gives byte-identical output:
 
 ```sh
 bento-c post.bento -o - | bento-link - tone.bbc -o - | bento-opt - -o - | bento-llc - --entry=gray
@@ -152,7 +152,7 @@ bento-c post.bento -o - | bento-link - tone.bbc -o - | bento-opt - -o - | bento-
 
 ## Diagnostics
 
-Every parse and type error in a file is reported in one run with a line and column. Unknown names get a hint for the qualified name of an import or for the closest name of the same kind:
+Bento reports every parse and type error in a file in one run and gives each one a line and column. When a name is unknown, the error hints at the qualified name of an import or at the closest name of the same kind:
 
 ```text
 hint.bento:3:38: error: unknown function 'sqrt' and the name 'std::sqrt' is imported
@@ -161,17 +161,17 @@ hint.bento:4:37: error: unknown function 'std::normalise' and the closest functi
 
 ## Editor support
 
-VS Code and Sublime Text share one TextMate grammar for syntax highlighting. Both work with `bento-lsp` as an option on top:
+VS Code and Sublime Text share one TextMate grammar for syntax highlighting. In both editors you can add `bento-lsp` on top of it:
 
 | Editor | Package | Language server |
 | --- | --- | --- |
 | VS Code | `editors/vscode` | through the extension |
 | Sublime Text | `editors/sublime` | through the LSP package |
 
-The diagnostics of `bento-c` are published by `bento-lsp` on every change. Hover shows the type and the `///` doc comment of a declaration. Go to definition and the document outline are supported. Setup for each editor is described in the README of its package.
+`bento-lsp` publishes the diagnostics of `bento-c` on every change. Hovering over a declaration shows its type and its `///` doc comment. The server also supports go to definition and the document outline. The README of each package describes how to set it up in that editor.
 
 ::: note
-The Sublime Text package is generated from the VS Code grammar by `tools/sublime.py`.
+`tools/sublime.py` generates the Sublime Text package from the VS Code grammar.
 :::
 </script>
 </body>

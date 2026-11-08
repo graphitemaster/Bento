@@ -15,9 +15,9 @@
 
 ## Structured control flow
 
-Control flow in the IR is structured as SPIR-V and GLSL require. There is no control flow graph and no goto. The then and else blocks of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `discard`. Loops are found by walking a tree rather than by computing dominators.
+Control flow in Bento IR is structured, the way SPIR-V and GLSL require it to be. LLVM IR is a control flow graph of blocks joined by branches, but Bento IR has no control flow graph and no goto. The then and else blocks of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `discard`. Where LLVM finds loops by computing dominators, Bento finds them by walking a tree.
 
-Values are not passed through jumps but rather merged by PHIs. PHIs after an `if` have one operand per arm. PHIs at the top of a loop have the entry value and then one operand per `continue` in edge order. PHIs after a loop have one per `break`.
+Values aren't passed through jumps. They're merged by PHIs instead. A PHI after an `if` has one operand per arm, a PHI at the top of a loop has the entry value followed by one operand per `continue` in edge order, and a PHI after a loop has one per `break`.
 
 ```bento sum.bento
 module demo;
@@ -87,17 +87,17 @@ fn @sum(i32, f32) -> f32 export
 	return %r25
 ```
 
-Nesting is flattened under labels in printed IR. `%r` is a value, `%bb` a block, `$` a literal, and `@` a function or global. Uniformity qualifiers other than `simdgroup` are printed after the opcode, as in `loop.thread`.
+Printed IR flattens the nesting out under labels. `%r` is a value, `%bb` a block, `$` a literal, and `@` a function or global. Uniformity qualifiers are printed after the opcode, as in `loop.thread`, for every scope except `simdgroup`.
 
 ## Instructions and types
 
-Every instruction, type, and printed form is listed in the [IR reference](ir-reference.html). Arithmetic is split into signed, unsigned, and float only where the bits differ. Builtins such as `min` and `abs` are opcodes that fold rather than opaque calls. Literals are operands rather than instructions and are in scope everywhere in a function.
+The [IR reference](ir-reference.html) lists every instruction, type, and printed form. Arithmetic is only split into signed, unsigned, and float where the bits differ: there's one `iadd` for both kinds of integer, but `idiv` and `udiv` are separate. Builtins such as `min` and `abs` are opcodes that fold like any other instruction, not opaque calls. In SPIR-V every constant is an instruction of its own. In Bento IR literals are operands and are in scope everywhere in a function.
 
-Every opcode is pure, convergent, or impure. Passes are written against those effects rather than against opcode names. Convergent instructions such as derivatives, barriers, and simdgroup operations are never moved into or out of control flow.
+Every opcode is pure, convergent, or impure. Passes are written against those effects rather than against opcode names. Convergent instructions, such as derivatives, barriers, and simdgroup operations, are never moved into or out of control flow.
 
-Fast-math flags are set per block and apply to the instructions directly in it. The types are those of the language. Uniformity is recorded on every `if` and loop, and on every function as the scope and the stages.
+The IR uses the types of the language itself. Fast-math flags are set per block and apply to the instructions directly in it, where LLVM IR repeats them on every instruction. Uniformity is recorded on every `if` and loop. Every function records it as the scope and the stages it may be called from.
 
-Generic functions are checked once and stored in bytecode as templates. Calls are instantiated by substitution, at the end of lowering for local generics and in the linker for imported ones.
+Generic functions are checked once and stored in bytecode as templates. A call is instantiated by substitution, at the end of lowering when the generic is local and in the linker when it's imported. C++ templates are checked when they're instantiated.
 
 ::: note
 Instantiation never fails.
@@ -105,7 +105,7 @@ Instantiation never fails.
 
 ## Building IR without source
 
-Any program can build IR through the public builder. Failures in the builder are sticky: every later build does nothing and the status is checked once at the end. Whole modules are written out with `bento-llc --target=bto` as C that builds them again:
+You don't need Bento source to make IR. Any program can build it through the public builder, much as a frontend builds LLVM IR through LLVM's IRBuilder. Failures in the builder are sticky. After the first one every later build does nothing. The status is checked once at the end instead of after every call. `bento-llc --target=bto` writes a whole module out as C that builds it again:
 
 ```c sum.c
 	f = bto_ir_function_begin(b, BTO_STRING("sum"), T[2], BTO_IR_LINKAGE_EXPORT);
@@ -134,9 +134,9 @@ Any program can build IR through the public builder. Failures in the builder are
 
 ## Verification
 
-Bytecode is verified before any tool uses it. Passes and generators depend on what the verifier guarantees: operands defined before use, well formed control flow and types, calls allowed by the stages and uniformity of the callee, and entry point bindings allowed by the stage.
+Bytecode is verified before any tool uses it. The passes and generators depend on what the verifier guarantees: operands are defined before they're used, control flow and types are well formed, every call is allowed by the stages and uniformity of its callee, and every entry point's bindings are allowed by its stage.
 
-Loading an IR image must be verified to prevent out of bounds and type confusion. Every offset, alignment, and length is checked before it is trusted. Objects lie in the order they are reached and each must begin where the last one ended, so none can overlap. Nesting is limited. The image is used in place, with nothing copied. No input may crash, hang, or exhaust memory.
+An IR image is used in place, with nothing copied, and loading one has to be verified too, or a damaged or hostile image could cause out of bounds access and type confusion. Every offset, alignment, and length is checked before it's trusted. Objects appear in the order they're visited and each has to begin exactly where the last one ended. Two objects can never overlap. Nesting depth is limited. No input may crash, hang, or exhaust memory.
 
 ```text bento-val
 oldver.bbc: error: not an IR image from this build of Bento
@@ -146,13 +146,9 @@ ptr.bbc: error: the IR image is damaged: a pointer points outside it or into ano
 
 ## Bytecode
 
-Modules are saved to `.bbc` images as one flat block with every pointer turned into an offset and are loaded back with a single read. Images of the same module are identical byte for byte. Images can be moved together with the sources they were built from.
+Modules are saved to `.bbc` images as one flat block that loads back with a single read. Every pointer in it is turned into an offset. Unlike LLVM bitcode, there's nothing to decode on the way in. The same module always saves to an image that's identical byte for byte. You can move an image around together with the sources it was built from.
 
-Bytecode is a delivery format rather than a step to throw away:
-
-- Imports left unresolved in a link stay imports for a later link.
-- Shaders compiled from source, IR built by other programs, and modules compiled offline can all be linked together.
-- The file table and every location are removed with `bento-strip` without changing the generated code.
+Most compilers throw their IR away once code is generated. Bento bytecode is a delivery format instead. Imports a link leaves unresolved stay imports for a later link. Shaders compiled from source, IR built by other programs, and modules compiled offline can all be linked together. `bento-strip` removes the file table and every location without changing the generated code.
 
 ```ir bento-dis partial.bbc
 import bits
@@ -177,7 +173,7 @@ fn @noise::hash(u32) -> u32 internal
 fn @bits::fold(u32) -> u32 import
 ```
 
-The shader here was linked with `noise` but not with `bits`.
+This shader was linked with `noise` but not with `bits`. The call to `@noise::hash` now goes to an internal function, while `@bits::fold` is still an import waiting for a later link.
 </script>
 </body>
 </html>

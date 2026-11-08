@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Uber shaders · Bento</title>
+	<meta name="description" content="Features are declared in the language, every variant an uber shader can have is checked when the source is compiled, and exactly those variants are built.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Uber shaders
+
+Bento supports Uber shaders as a first class feature all the way through its IR. In other shading languages Uber shaders are typically achieved through some combination of preprocessor macros and specialization constants. Every variant is generated as source text, and only then lexed, parsed, type checked, and compiled. In addition to being slow and wasteful, this leads to invalid and redundant variants.
+
+Bento recognizes features and builds a checked DAG that sees the nested dependencies between them, and forces you to explicitly declare every variant actually used. An Uber shader is lexed, parsed, type checked, compiled, and optimized only once. The IR is left in an incomplete state and is made concrete by instantiating it with a struct of data laid out like the features the shader declares. Once the IR is specialized, one more pass of the optimizer can run to sink those constants into the shader.
+
+## Features
+
+Features are declared with `feature`. Every member of a feature is a `b32`, an enum, or a domain:
+
+```bento
+enum Model { Lambert, Phong, Toon }
+domain SampleCount : u32 { 1, 2, 4, 8 }
+domain PassCount : u32 { 1..=4 }
+
+feature Lighting {
+	Shadows:  b32,
+	Cascades: b32 requires Shadows,
+	Specular: b32,
+}
+
+feature Quality {
+	Shading: Model,
+	Samples: SampleCount,
+	Passes:  PassCount requires Passes == 1 || Lighting.Shadows,
+}
+```
+
+A member is just a constant of its type. You can read it in any function, anywhere a constant is allowed: in a `const if`, a `const for`, an array length, or plain arithmetic. There's no need to pass features down the call chain as parameters:
+
+```bento
+fn shadow(p: f32x3) -> f32 {
+	const if Lighting.Cascades {
+		...
+	}
+	...
+}
+
+[[stage(.Fragment)]]
+fn shade(fs: In) -> Out
+	requires Quality.Shading != .Toon || !Lighting.Specular
+{
+	let light = ambient(fs);
+	const if Lighting.Shadows {
+		light *= shadow(fs.position);
+	}
+	const for let i: u32 = 0; i < Quality.Passes as u32; i += 1 {
+		...
+	}
+	...
+}
+```
+
+Plain integers and floats aren't allowed as members. Restricting members to [domains](language.html#named-types) is what keeps the number of variants finite. `PassCount` has exactly four values, not four billion.
+
+## Requires
+
+Not every combination of features makes sense. Cascaded shadows without shadows is meaningless. In the example above more than one pass is only allowed with shadows. A `requires` clause states a condition every variant has to meet.
+
+Inside a feature, bare names refer to members of the same feature and qualified names like `Lighting.Shadows` refer to members of other features. Clauses are written with comparisons, `in`, `&&`, `||`, and `!`. Constants convert to the domain of the member they're compared against.
+
+Functions can have `requires` clauses too. The one on `shade` rules out specular lighting combined with toon shading. A clause on any function rules those variants out of every entry point that ends up calling it, however deep the call.
+
+Fields and bindings guarded with `[[requires(...)]]` only exist in the variants that meet the guard. Binding numbers don't shift between variants:
+
+```bento
+struct Shade {
+	[[constant(0)]]                            frame:  Frame,
+	[[texture(0), requires(Lighting.Shadows)]] shadow: [sampled; 2]f32,
+	[[location(0)]]                            normal: f32x3,
+}
+```
+
+Any use of a guarded field has to be under a `const if` that implies the guard, taking the clauses into account. `fs.shadow` can be read under `const if Lighting.Cascades` because cascades require shadows, but reading it anywhere else is an error. Bento also warns about `const if` arms no variant ever chooses and clauses no variant can meet, since those are almost always mistakes.
+
+## Variants
+
+Bento works out the variants of each entry point from the members actually read by the code it calls, at any depth, along with the clauses on that code. A member only matters to a variant where the code in that variant reads it or a clause constrains it. Variants that differ only in members they never read are the same variant.
+
+The result is a decision DAG stored in the bytecode for each entry point. Each node tests one member, each edge is a value or a range, and each leaf is a variant. Members are tested in the order the features and their members are written. Paths that end in the same variant are joined. A configuration that breaks a clause simply has no edge to follow. `bento-dis` prints the DAG along with the module:
+
+```bento
+domain PassCount : u32 { 1..=2 }
+
+feature Lighting {
+	Shadows: b32,
+}
+
+feature Quality {
+	Passes: PassCount,
+}
+
+feature Surface {
+	Fog: b32,
+}
+
+[[stage(.Fragment)]]
+fn shade(fs: In) -> Out {
+	const if Lighting.Shadows {
+		...
+	}
+	const if Surface.Fog {
+		const for let i: u32 = 0; i < Quality.Passes as u32; i += 1 {
+			...
+		}
+	}
+}
+```
+
+```text
+variants @shade 6
+	Lighting.Shadows: b32
+	Quality.Passes: PassCount
+	Surface.Fog: b32
+
+                         Lighting.Shadows
+                ┌─0──────────────┴──────────────1─┐
+         Quality.Passes                    Quality.Passes
+        ┌─1─────┴─────2─┐                 ┌─1─────┴─────2─┐
+   Surface.Fog     Surface.Fog       Surface.Fog     Surface.Fog
+  ┌─1───┴───0─┐   ┌─0───┴───1─┐     ┌─1───┴───0─┐   ┌─0───┴───1─┐
+  #1          └─┬─┘           #2    #4          └─┬─┘           #5
+                #0                                #3
+
+#0 Lighting.Shadows 0 Quality.Passes * Surface.Fog 0
+#1 Lighting.Shadows 0 Quality.Passes 1 Surface.Fog 1
+#2 Lighting.Shadows 0 Quality.Passes 2 Surface.Fog 1
+#3 Lighting.Shadows 1 Quality.Passes * Surface.Fog 0
+#4 Lighting.Shadows 1 Quality.Passes 1 Surface.Fog 1
+#5 Lighting.Shadows 1 Quality.Passes 2 Surface.Fog 1
+```
+
+Without fog the passes are never read. Both values of `Quality.Passes` lead to the same variant. `#0` and `#3` each have two parents. A `*` marks a member the variant never reads. Eight combinations end up as six variants.
+
+## Building
+
+`bento-c` reports how many variants every entry point has. A limit in `bto_config.h` turns a runaway count into an error that names the members contributing the most. `bento-llc --entry=shade --variant=N` builds one variant and `--variants` builds all of them.
+
+To make a variant concrete, the IR is instantiated with a struct of data laid out like the features of the shader. The data is checked against the DAG first. Data no variant covers is reported along with the domain or clause it breaks. After that, one more pass of the optimizer can sink the constants into the shader. The code generators never see a feature.
+
+## Compared with other approaches
+
+- Preprocessor macros in GLSL and HLSL generate every combination as source text that has to be compiled from scratch. A broken combination isn't noticed until someone builds it.
+- Specialization constants in Vulkan and function constants in Metal use one module for every combination and leave the branches on the configuration for the driver to remove, if it does.
+- Slang specializes generics and interfaces at link time, but nothing declares which combinations are actually valid.
+
+## Several configurations in one shader
+
+Features are global to a shader. When you need configurations side by side in the same shader, such as two materials drawn by one pass, use generics with enum parameters instead.
+</script>
+</body>
+</html>
