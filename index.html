@@ -143,26 +143,26 @@ bento-llc --target=spirv hello.bbc</pre>
 </div>
 
 <div class="section-head" id="compare">
-	<h2>Comparison with GLSL, HLSL, and WGSL</h2>
+	<h2>Comparison with GLSL, HLSL, WGSL, and Slang</h2>
 </div>
 <div class="tray">
 	<div class="cell full">
 		<div class="table">
 		<table>
 			<thead>
-				<tr><th></th><th>Bento</th><th>GLSL, HLSL, WGSL</th></tr>
+				<tr><th></th><th>Bento</th><th>Slang</th><th>GLSL, HLSL, WGSL</th></tr>
 			</thead>
 			<tbody>
-				<tr><td>Output</td><td>Lowered straight to SPIR-V, AIR, DXIL, or GLSL</td><td>glslang, DXC, Tint, or a transpiler in between</td></tr>
-				<tr><td>Reuse</td><td>Modules, imports, and a linker</td><td><code>#include</code></td></tr>
-				<tr><td>Variants</td><td>Type checked <code>const if</code>, <code>const for</code>, and generics</td><td>Preprocessor macros</td></tr>
-				<tr><td>Uniformity</td><td>Proven for every value and checked across modules</td><td>Unchecked in GLSL and HLSL but checked for derivatives and barriers in WGSL</td></tr>
-				<tr><td>Barriers</td><td>Inserted automatically</td><td>Written by hand</td></tr>
-				<tr><td>Built-ins</td><td>Context parameters checked per stage</td><td>Globals or semantics</td></tr>
-				<tr><td>Buffers in functions</td><td>References with a memory space</td><td>Not allowed in GLSL</td></tr>
-				<tr><td>Results</td><td>Multiple return values</td><td><code>out</code> parameters</td></tr>
-				<tr><td>Embedding</td><td>One C library without dependencies</td><td>Large C++ code bases</td></tr>
-				<tr><td>Access</td><td>Every stage public, down to the IR</td><td>Source in, code out</td></tr>
+				<tr><td>Output</td><td>Lowered straight to SPIR-V, AIR, DXIL, or GLSL</td><td>SPIR-V directly, DXIL through DXC, and MSL, HLSL, GLSL, or WGSL source</td><td>glslang, DXC, Tint, or a transpiler in between</td></tr>
+				<tr><td>Reuse</td><td>Modules, imports, and a linker</td><td>Modules, precompiled modules, and <code>#include</code></td><td><code>#include</code></td></tr>
+				<tr><td>Variants</td><td>Type checked <code>const if</code>, <code>const for</code>, and generics</td><td>Generics, interfaces, link-time specialization, and preprocessor macros</td><td>Preprocessor macros</td></tr>
+				<tr><td>Uniformity</td><td>Proven for every value and checked across modules</td><td>Opt-in checks of values marked <code>dynamic_uniform</code> by hand</td><td>Unchecked in GLSL and HLSL but checked for derivatives and barriers in WGSL</td></tr>
+				<tr><td>Barriers</td><td>Inserted automatically</td><td>Written by hand</td><td>Written by hand</td></tr>
+				<tr><td>Built-ins</td><td>Context parameters checked per stage</td><td>Semantics as in HLSL</td><td>Globals or semantics</td></tr>
+				<tr><td>Buffers in functions</td><td>References with a memory space</td><td>Resource parameters and pointers</td><td>Not allowed in GLSL</td></tr>
+				<tr><td>Results</td><td>Multiple return values</td><td><code>out</code> parameters and tuples</td><td><code>out</code> parameters</td></tr>
+				<tr><td>Embedding</td><td>One C library without dependencies</td><td>Large C++ code base, with DXC for DXIL</td><td>Large C++ code bases</td></tr>
+				<tr><td>Access</td><td>Every stage public, down to the IR</td><td>Reflection API, IR internal</td><td>Source in, code out</td></tr>
 			</tbody>
 		</table>
 		</div>
