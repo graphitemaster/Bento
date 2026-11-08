@@ -48,7 +48,7 @@ fn @lit(Light, f32x3) -> f32x3 export file 0
 | `file n "name" "path" digest` | Source file `n` with the SHA-256 digest of its text. `bento-strip` removes the file table. |
 | `import name` | Module whose exports this one uses. |
 | `type Name = …` | Exported type, as a struct with its fields, an enum with its values, or any other type. |
-| `global @name: T storage linkage` | Global in `constant` or `workgroup` memory. Constant globals end with their data as `= $…`, every scalar in order and matrices column by column. |
+| `global @name: T storage linkage` | Global in `constant` or `workgroup` memory, or `bound` with a binding, as in `bound storage 0`. Constant globals end with their data as `= $…`, every scalar in order and matrices column by column. An entry point binds the bound globals it reaches through its calls, and no two of them may share a slot. |
 | `fn @name(…) -> R …` | Function, followed by its body unless it is imported. |
 
 Names of other modules are qualified, as in `@noise::hash`. Overloads after the first print with a number, as in `@mix.1`.
@@ -100,11 +100,11 @@ Literals of a parameter type are kept in every form an instance can need and pri
 | `attribute n` | vertex inputs | Vertex attribute `n`. |
 | `location n` | fragment inputs, vertex outputs | Varying `n`, with `Flat` or `NoPerspective` after it unless smooth. |
 | `color n` | fragment outputs | Color attachment `n`. |
-| `storage n` | inputs | Storage buffer, as a `&storage` reference. |
-| `constant n` | inputs | Constant buffer, as a `&constant` reference. |
-| `image n` | inputs | Storage image. |
-| `texture n` | inputs | Texture or sampled texture. |
-| `sampler n` | inputs | Sampler, in Vulkan and Metal. |
+| `storage n` | bound globals | Storage buffer, read as a `&storage` reference. |
+| `constant n` | bound globals | Constant buffer, read as a `&constant` reference. |
+| `image n` | bound globals | Storage image. |
+| `texture n` | bound globals | Texture or sampled texture. |
+| `sampler n` | bound globals | Sampler, in Vulkan and Metal. |
 | `builtin name` | outputs | `position` from a vertex entry point or `frag_depth` from a fragment entry point. |
 
 ### Builtins
@@ -300,7 +300,7 @@ Packing puts the first lane in the lowest bits.
 | Instruction | Meaning |
 | --- | --- |
 | `alloca` | Local of the result type, as a `&thread` reference. |
-| `global @name` | Reference to a global, in `constant` or `workgroup` memory. |
+| `global @name` | Reference to a global, in `constant` or `workgroup` memory, or in `storage` or `constant` memory for a bound buffer. A bound image, texture, or sampler gives the handle itself. |
 | `input name` | Builtin of the entry point. |
 | `access p, $k`, `access p, i` | Reference to a member or element of what `p` refers to, in the same memory. |
 | `load p` | Value behind `p`. |

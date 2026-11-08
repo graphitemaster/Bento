@@ -413,6 +413,13 @@ figure.cell pre {
 	max-width: 52rem;
 }
 
+.graphic {
+	display: block;
+	width: 100%;
+	height: auto;
+	margin: 0 0 3.5rem;
+}
+
 .quote {
 	font-size: 1.05rem;
 	color: var(--rice);

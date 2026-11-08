@@ -104,6 +104,8 @@ w.xz = normal.yx;
 
 `.Name` is an enumerator of the enum known from context: an argument, an initializer element, an index into an enumerated array, or the other side of a comparison.
 
+Enums are `i32` unless another signed or unsigned integer type follows the name, as in `enum Mode: u8 { Flat = 1, Lit = 2 }`. Values are checked to fit that type, and enums in buffers are laid out as it.
+
 ```bento
 enum Axis { X, Y, Z }
 

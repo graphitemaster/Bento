@@ -22,7 +22,7 @@
 | C | rebuilding a module through the library | `bto` |
 | nothing | checking a module | `null` |
 
-One entry point is generated at a time. No target can pass buffers, workgroup memory, or images to a function. Functions with such parameters are copied for every set of roots they are called with. Run-time indices into them become extra parameters of the copy.
+One entry point is generated at a time. No target can pass buffers, workgroup memory, or images to a function. Lowering and linking copy functions with such parameters for every set of globals they are called with. Run-time indices into them become extra parameters of the copy. Calls stay calls in every target.
 
 ## Bindings
 
