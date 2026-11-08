@@ -49,7 +49,7 @@ function rewrite(url) {
 	});
 }
 
-var BENTO_KEYWORDS = /^(fn|if|else|for|return|break|continue|discard|enum|struct|type|let|const|import|export|module|using|thread|simdgroup|workgroup|partgroup|quadgroup|dispatch|storage|constant|as|vector|matrix|image|texture|sampled|interface|context|with|requires)$/;
+var BENTO_KEYWORDS = /^(fn|if|else|for|return|break|continue|discard|enum|struct|type|let|const|import|export|module|using|thread|simdgroup|workgroup|partgroup|quadgroup|dispatch|storage|constant|as|array|table|layer|domain|vector|matrix|image|texture|sampled|interface|context|with|requires)$/;
 var BENTO_TYPES = /^(sampler|scene|r16|r32)$/;
 var GLSL_KEYWORDS = /^(layout|in|out|inout|uniform|buffer|struct|return|if|else|for|while|do|break|continue|discard|const|readonly|writeonly|restrict|coherent|flat|smooth|noperspective|shared|precision|highp|mediump|lowp|true|false|std140|std430|binding|location|set|local_size_x|local_size_y|local_size_z)$/;
 var GLSL_TYPES = /^(void|bool|int|uint|float|double|[biud]?vec[234]|mat[234](x[234])?|f16vec[234]|float16_t|u?int(8|16|64)_t|i?image[123]D|uimage[123]D|sampler[123]D)$/;

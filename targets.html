@@ -151,7 +151,7 @@ Capabilities and extensions are declared only when used. SPIR-V derivatives are 
                OpFunctionEnd
 ```
 
-`scale_at` has a `&storage []f32` parameter and is called for two buffers. Each call goes to a separate copy built on the variable of that buffer. The index is passed as a parameter.
+`scale_at` has a `&storage [array; _]f32` parameter and is called for two buffers. Each call goes to a separate copy built on the variable of that buffer. The index is passed as a parameter.
 
 ### Textures and samplers
 
@@ -275,7 +275,7 @@ Extensions are enabled only when a feature from one is used.
 Shaders with 1D images, 64-bit integers, or reads from images without a format cannot be generated as GLSL ES.
 :::
 
-Textures and sampled textures bound with `texture(n)` are declared at binding `n` as the GLSL sampler type of the same form. `[[]texture; 2][4]u32` is declared as `usampler2DMSArray` and `[sampled; 6]f32` as `samplerCube`. Textures are read with `texelFetch` alone. Samplers are an error in OpenGL.
+Textures and sampled textures bound with `texture(n)` are declared at binding `n` as the GLSL sampler type of the same form. `[layer; _][texture; 2][array; 4]u32` is declared as `usampler2DMSArray` and `[sampled; 6]f32` as `samplerCube`. Textures are read with `texelFetch` alone. Samplers are an error in OpenGL.
 
 In OpenGL and on GPUs without ray tracing hardware, ray tracing is lowered to software traversal of a BVH in storage buffers. The BVH builders are compute kernels written in Bento and shipped in `std`.
 

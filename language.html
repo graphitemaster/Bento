@@ -40,6 +40,8 @@ Structs with bindings are allowed as the parameter or result of an entry point a
 
 ## Types
 
+### Scalars, vectors, and matrices
+
 | Kind | Written | Notes |
 | --- | --- | --- |
 | Booleans | `b32` | 32 bits wide like GPU booleans |
@@ -47,19 +49,12 @@ Structs with bindings are allowed as the parameter or result of an entry point a
 | Floats | `f16 f32` | |
 | Vectors | `f32x3`, `u8x4`, `b32x2` | 2 to 4 lanes of any scalar |
 | Matrices | `f32x4x4`, `f16x2x3` | floats only, columns first as in GLSL |
-| Arrays | `[64]f32`, `[]f32` | length first, unsized for storage only |
-| Enumerated arrays | `[enum; Axis]f32` | one element per enumerator |
-| Structs, enums, aliases | `struct`, `enum`, `type Color = f32x4;` | structs and enums are nominal |
-| Tuples | `(f32x3, f32)` | results of a function only |
-| References | `&storage []f32` | memory space written out |
-| Images | `[image; 2]f32`, `[image; 6]f32` | storage images of 1 to 3 dimensions or a cube |
-| Sampled textures | `[sampled; 2]f32` | a texture joined with a sampler |
-| Layered textures | `[[]sampled; 2]f32`, `[[8]image; 2]u32` | arrays of layers, of a known count or not |
-| Multisampled textures | `[texture; 2][4]f32`, `[image; 2][]u32` | samples as an array in the texel type |
-| Textures and samplers | `[texture; 2]f32`, `sampler` | bound apart and joined in the shader |
-| Rays and scenes | `r32`, `r16`, `scene` | ray tracing |
 
 `f32x3` is short for `[vector; 3]f32` and `f32x4x3` for `[matrix; 4][vector; 3]f32`. The bracketed form is for sizes given by a constant or a generic parameter.
+
+### Named types
+
+Structs, enums, and domains are nominal: two declarations with the same contents are different types. `type Color = f32x4;` is an alias and is the same type as `f32x4`.
 
 `...` includes the fields of another struct without making a subtype: a `Triple` is not a `Pair`.
 
@@ -67,6 +62,139 @@ Structs with bindings are allowed as the parameter or result of an entry point a
 struct Pair { first: f32, second: f32 }
 struct Triple { ...Pair, third: f32 }
 ```
+
+Enums are `i32` unless another signed or unsigned integer type follows the name, as in `enum Mode : u8 { Flat = 1, Lit = 2 }`. Values are checked to fit that type, and enums in buffers are laid out as it.
+
+A domain is a type whose values are exactly those listed. The list holds single values and ranges: `a..=b` includes `b`, `a..<b` stops before it, and `a..` has no end. Overlapping and adjacent ranges merge, so `domain { 0, 1, 2, 3 }` and `domain { 0..<4 }` hold the same values.
+
+```bento
+domain Tap : i32 { -2..=2 }
+domain Power : u32 { 1, 2, 4, 8 }
+domain Mip : f32 { 0.25, 0.5, 1.0 }
+```
+
+The type of a domain is any integer or float type. Without one it is `u32` when no value is below 0, `i32` when one is, and `f32` when a value is a float literal. NaN is not allowed, and `0.0` and `-0.0` are the same value.
+
+A constant converts to a domain when its value is in it and is an error otherwise: `let t: Tap = 3;` does not compile. `as` converts a run-time value of the underlying type without a check, and a value outside the domain is undefined, as an index out of range is. `t as i32` gives the plain value back, and arithmetic works on the underlying type. An enum is a domain whose values have names.
+
+### Indexed types
+
+Every type written `[kind; parameter]T` is indexed, and indexing it gives `T`. A type reads left to right in the order it is indexed.
+
+| Type | Indexed by | Gives |
+| --- | --- | --- |
+| `[array; 4]T` | a `u32` from 0 to 3 | `T` |
+| `[array; ?]T` | a `u32`, with the length taken from the initializer | `T` |
+| `[array; _]T` | a `u32`, with no length known | `T` |
+| `[table; D]T` | a value of the domain or enum `D` | `T` |
+| `[vector; 4]T` | a lane | `T` |
+| `[matrix; 4]V` | a column | the column vector `V` |
+| `[texture; 2]T`, `[image; 2]T`, `[sampled; 2]T` | integer coordinates | a texel of `T` |
+| `[layer; K]I` | a layer | one layer of the image `I` |
+
+### Arrays
+
+Arrays are indexed by `u32`. `[array; _]T` has no length and is allowed only in storage memory. `[array; ?]T` takes its length from its initializer, as in `[array; ?]u32 { ...1..=4, 8, 16 }`.
+
+Lengths allow arithmetic: `[array; N + M]T` and `[array; M + N]T` are the same type.
+
+### Tables
+
+A table is like an array, except instead of being indexed by every value of an integer type, it's indexed by a domain of its own. The domain can be sparse and the table still has no holes, every element it stores is one you can index. Other languages tend to call this a sparse array, or an enumerated array when the domain is an enum. Once the domain can hold plain numbers and not just named enumerators, it becomes clear these were always the same thing, an indexable type with its own set of keys, a table.
+
+Domains are where a lot of the good stuff comes from. Knowing every value something can take is what lets the compiler pick efficient code paths for high level code, and it's what our `requires` system is built on. Here's a blur kernel with taps from -2 to 2:
+
+```bento
+domain Tap : i32 { -2..=2 }
+
+const WEIGHTS = [table; Tap]f32 { 0.0625, 0.25, 0.375, 0.25, 0.0625 };
+
+fn blur(row: [array; 64]f32, x: i32) -> f32 {
+	let sum: f32 = 0;
+	const for let i = -2; i <= 2; i += 1 {
+		const t: Tap = i;
+		sum += row[(x + i) as u32] * WEIGHTS[t];
+	}
+	return sum;
+}
+```
+
+`WEIGHTS[-2]` through `WEIGHTS[2]` are the five taps, there's no padding and no offset to keep track of by hand. Only a `Tap` can index `WEIGHTS`, so passing some stray `i32` is an error rather than a bug you find later.
+
+Indexing with a `Tap` known only at run time is where the domain earns its keep. You write the tap you mean, `-2` through `2`, and the compiler adds the `+2` that turns it into a slot. When the tap is constant there's nothing left to do at run time, the lookup folds to the weight itself, and a `const for` over every tap folds the whole sum away:
+
+::: pair
+```bento before
+domain Tap : i32 { -2..=2 }
+
+const WEIGHTS = [table; Tap]f32 {
+	0.0625, 0.25, 0.375, 0.25, 0.0625
+};
+
+export fn weight(t: Tap) -> f32 {
+	return WEIGHTS[t];
+}
+
+export fn center() -> f32 {
+	return WEIGHTS[0];
+}
+
+export fn total() -> f32 {
+	let sum: f32 = 0;
+	const for let i = -2; i <= 2; i += 1 {
+		const t: Tap = i;
+		sum += WEIGHTS[t];
+	}
+	return sum;
+}
+```
+```ir after
+global @WEIGHTS: [5]f32 constant internal = $0x1p-4, $0x1p-2, $0x1.8p-2, $0x1p-2, $0x1p-4
+
+fn @weight(i32) -> f32 export
+%bb0(%r1):
+	%r3 = global @WEIGHTS
+	%r5 = iadd %r1, $2
+	%r6 = access %r3, %r5
+	%r7 = load %r6
+	return %r7
+
+fn @center() -> f32 export
+%bb0:
+	return $0x1.8p-2
+
+fn @total() -> f32 export
+%bb0:
+	return $1.0
+```
+:::
+
+Elements are stored in ascending order of value, or declaration order for an enum, and that's the order initializers, spreads, and `const for` see. Nothing else ever shows you where an element lives, a `Tap` is always its value and never a slot. When the domain is one range, indexing costs a subtraction, or nothing at all when it starts at 0. Sparse domains are a lookup, and constant indices fold away entirely.
+
+Enums work the same way, with `.Name` picking the enumerator just like anywhere else the enum is known:
+
+```bento
+enum Axis { X, Y, Z }
+
+const BLUR = [table; Axis]f32 { 0.25, 0.5, 0.25 };
+
+fn weight(axis: Axis) -> f32 {
+	if axis == .Z {
+		return BLUR[.Z];
+	}
+	return BLUR[axis];
+}
+```
+
+### Other types
+
+| Kind | Written | Notes |
+| --- | --- | --- |
+| Tuples | `(f32x3, f32)` | results of a function only |
+| References | `&storage [array; _]f32` | memory space written out, see [memory spaces](#memory-spaces) |
+| Images and textures | `[image; 2]f32`, `[texture; 2]f32`, `[sampled; 2]f32` | see [images, textures, and samplers](#images-textures-and-samplers) |
+| Samplers | `sampler` | bound apart from textures |
+| Rays and scenes | `r32`, `r16`, `scene` | see [ray tracing](#ray-tracing) |
 
 ## Literals
 
@@ -102,28 +230,13 @@ let w = color;
 w.xz = normal.yx;
 ```
 
-`.Name` is an enumerator of the enum known from context: an argument, an initializer element, an index into an enumerated array, or the other side of a comparison.
-
-Enums are `i32` unless another signed or unsigned integer type follows the name, as in `enum Mode: u8 { Flat = 1, Lit = 2 }`. Values are checked to fit that type, and enums in buffers are laid out as it.
-
-```bento
-enum Axis { X, Y, Z }
-
-const BLUR = [enum; Axis]f32 { 0.25, 0.5, 0.25 };
-
-fn weight(axis: Axis) -> f32 {
-	if axis == .Z {
-		return BLUR[.Z];
-	}
-	return BLUR[axis];
-}
-```
+`.Name` is an enumerator of the enum known from context: an argument, an initializer element, an index into a table, or the other side of a comparison.
 
 Vectors, structs, arrays, and the results of calls can be spread with `...` into an argument list, an initializer, a return, or image coordinates.
 
 ```bento
 let darker = f32x4 { ...rgb * 0.5, alpha };
-let joined = [5]f32 { ...f32x2 { x, y }, ...rgb };
+let joined = [array; 5]f32 { ...f32x2 { x, y }, ...rgb };
 let texel = cs.src[...t.global.xy];
 ```
 
@@ -148,7 +261,7 @@ Precedence follows Go rather than C: `a & b == c` is `(a & b) == c`.
 
 `x ** n` multiplies `x` by itself for a constant `n` of at least 0. Between matrices and vectors, `*` is the linear algebra product. Scalars next to vectors or matrices apply to every lane.
 
-Comparisons of vectors give `b32` vectors. The prefix operators `any` and `all` reduce such a vector to one `b32` and apply to a whole comparison, as in `any a < b || all c > d`. Only the chosen side of `c ? a : b` is evaluated and both sides count as divergent code. `as` converts between any two scalars, vectors of the same width, matrices of the same size, and enums and integers.
+Comparisons of vectors give `b32` vectors. The prefix operators `any` and `all` reduce such a vector to one `b32` and apply to a whole comparison, as in `any a < b || all c > d`. Only the chosen side of `c ? a : b` is evaluated and both sides count as divergent code. `as` converts between any two scalars, vectors of the same width, matrices of the same size, and enums or domains and their underlying types.
 
 Constant shift amounts have to be at least 0 and less than the bit width of the shifted scalar. Indices known at compile time to be out of range are errors.
 
@@ -225,7 +338,7 @@ fn soften(c: f32x4) -> f32x4 {
 Generic parameters are written in brackets after the name and are known at compile time. Parameters with a bound are type parameters and those with a type are value parameters.
 
 ```bento
-fn sum[T: Number, N: u32](xs: [N]T) -> T {
+fn sum[T: Number, N: u32](xs: [array; N]T) -> T {
 	let total: T = 0;
 	for let i: u32 = 0; i < N; i += 1 {
 		total += xs[i];
@@ -251,10 +364,10 @@ Generics are type checked once and can be exported through bytecode. Errors are 
 | `Signed` | signed integers and floats | negative literals, `abs`, and `sign` |
 | `Float` | `f16` and `f32` | float literals, the float math library, and derivatives |
 
-Lengths allow arithmetic: `[N + M]T` and `[M + N]T` are the same type.
+Lengths allow arithmetic:
 
 ```bento
-fn join[T, N: u32, M: u32](a: [N]T, b: [M]T) -> [N + M]T {
+fn join[T, N: u32, M: u32](a: [array; N]T, b: [array; M]T) -> [array; N + M]T {
 	return { ...a, ...b };
 }
 ```
@@ -316,13 +429,13 @@ Buffers, workgroup memory, and images can be passed to functions on every target
 
 ```bento
 struct Sums {
-	[[storage(0)]] values: []f32,
-	[[storage(1)]] totals: []f32,
+	[[storage(0)]] values: [array; _]f32,
+	[[storage(1)]] totals: [array; _]f32,
 }
 
 [[stage(.Compute), workgroup_size(64)]]
 fn reduce(cs: Sums) with (t: Thread, group: WorkGroup) {
-	let part: workgroup [64]f32;
+	let part: workgroup [array; 64]f32;
 	part[t.index] = cs.values[t.global.x];
 	thread if t.index == 0 {
 		let sum: f32 = 0;
@@ -388,11 +501,11 @@ let first = fs.albedo[0, 0];
 
 #### Layered textures
 
-Layered textures are written with the count of layers in brackets before the kind, `[[]sampled; 2]f32` for any count and `[[K]sampled; 2]f32` for `K` layers. The same form works for `image` and `texture`. Indexing a layered texture with a layer gives a regular texture of that one layer. The result is an ordinary `[sampled; 2]f32` and can be bound with `let` or passed to any function written for one.
+Layered textures are written with `[layer; K]` before the texture, as in `[layer; K][sampled; 2]f32` for `K` layers and `[layer; _][sampled; 2]f32` for any count. The same form works for `image` and `texture`. Indexing a layered texture with a layer gives a regular texture of that one layer. The result is an ordinary `[sampled; 2]f32` and can be bound with `let` or passed to any function written for one.
 
 ```bento
 struct Terrain {
-	[[texture(0)]] albedo: [[8]sampled; 2]f32,
+	[[texture(0)]] albedo: [layer; 8][sampled; 2]f32,
 	[[location(0), interpolate(.Flat)]] layer: u32,
 }
 
@@ -412,12 +525,12 @@ On every target the layer becomes part of the coordinate. Functions given one la
 
 #### Multisampled textures
 
-The samples of a multisampled texture are an array in the texel type. `[texture; 2][4]f32` has 4 samples and `[texture; 2][]f32` has any count. The same form works for `image` in 2 dimensions. Sampled textures cannot be multisampled. Indexing follows the type: the coordinate gives a texel of samples and the sample is one more index after it, like the index of any other array.
+The samples of a multisampled texture are an array in the texel type. `[texture; 2][array; 4]f32` has 4 samples and `[texture; 2][array; _]f32` has any count. The same form works for `image` in 2 dimensions. Sampled textures cannot be multisampled. Indexing follows the type: the coordinate gives a texel of samples and the sample is one more index after it, like the index of any other array.
 
 ```bento
 struct Resolve {
 	[[position]] at: f32x4,
-	[[texture(0)]] color: [texture; 2][4]f32,
+	[[texture(0)]] color: [texture; 2][array; 4]f32,
 }
 
 let at = fs.at.xy as i32x2;
@@ -433,13 +546,13 @@ Counts of samples are powers of two up to 64. Constant sample indices are checke
 Storage multisampled images need `shaderStorageImageMultisample` in Vulkan and are an error in GLSL ES. Layered multisampled textures are an error in GLSL ES 3.10.
 :::
 
-Arrays, layers, and samples combine. `[N][[K]texture; 2][S]T` is an `N` sized array of `K` layered 2D multisampled textures each with `S` samples. Every level is indexed in order, from the array to the sample:
+Arrays, layers, and samples combine. `[array; N][layer; K][texture; 2][array; S]T` is an `N` sized array of `K` layered 2D multisampled textures each with `S` samples. Every level is indexed in order, from the array to the sample:
 
 ```bento
 let texel = t[n][k][x, y][i];
 ```
 
-`t[n]` is one `[[K]texture; 2][S]T`, `t[n][k]` is its layer `k` as a `[texture; 2][S]T`, and `[x, y][i]` reads sample `i` of the texel at `x, y`.
+`t[n]` is one `[layer; K][texture; 2][array; S]T`, `t[n][k]` is its layer `k` as a `[texture; 2][array; S]T`, and `[x, y][i]` reads sample `i` of the texel at `x, y`.
 
 Arrays of textures are bound at one binding and `t[n]` is the texture at index `n`. Indices into them need no marking by hand. `NonUniform` is added wherever the uniformity analysis cannot prove an index uniform.
 
@@ -481,7 +594,7 @@ struct Material {
 }
 
 struct Shade {
-	[[storage(0)]] materials: []Material,
+	[[storage(0)]] materials: [array; _]Material,
 	[[location(0), interpolate(.Flat)]] index: u32,
 	[[location(1)]] uv: f32x2,
 }
