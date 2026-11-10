@@ -15,7 +15,7 @@
 
 ## Structured control flow
 
-Control flow in Bento IR is structured, the way SPIR-V and GLSL require it to be. LLVM IR is a control flow graph of blocks joined by branches, but Bento IR has no control flow graph and no goto. The then and else blocks of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `discard`. Where LLVM finds loops by computing dominators, Bento finds them by walking a tree.
+Control flow in Bento IR is structured, the way SPIR-V and GLSL require it to be. LLVM IR is a control flow graph of blocks joined by branches, but Bento IR has no control flow graph and no goto. The then and else blocks of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `kill`. Where LLVM finds loops by computing dominators, Bento finds them by walking a tree.
 
 Values aren't passed through jumps. They're merged by PHIs instead. A PHI after an `if` has one operand per arm, a PHI at the top of a loop has the entry value followed by one operand per `continue` in edge order, and a PHI after a loop has one per `break`.
 

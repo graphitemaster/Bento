@@ -44,11 +44,13 @@ Structs with bindings can only appear as the parameter or result of an entry poi
 
 | Kind | Written | Notes |
 | --- | --- | --- |
-| Booleans | `b32` | 32 bits wide like GPU booleans |
+| Booleans | `b8 b16 b32` | 8, 16, or 32 bits wide in memory |
 | Integers | `i8 i16 i32 i64 u8 u16 u32 u64` | |
 | Floats | `f16 f32` | |
 | Vectors | `f32x3`, `u8x4`, `b32x2` | 2 to 4 lanes of any scalar |
 | Matrices | `f32x4x4`, `f16x2x3` | floats only, columns first as in GLSL |
+
+Booleans of every width hold `true` and `false` and work with logic operators and conditions. They differ only in the room they take in a buffer or a struct, so `b8` packs flags into bytes where `b32` matches what GLSL and HLSL store. Like integers of different widths, two booleans of different widths only meet through `as`.
 
 The short names are spellings of a general bracketed form: `f32x3` is short for `[vector; 3]f32` and `f32x4x3` for `[matrix; 4][vector; 3]f32`. You only need the bracketed form when a size comes from a constant or a generic parameter.
 
@@ -292,7 +294,26 @@ fn classify(x: f32) -> i32 {
 }
 ```
 
-`for` is the only loop and comes in three forms: `for init; condition; step`, `for condition`, and a bare `for`. Bare `for` loops with no `break`, `return`, or `discard` inside can never end and are reported as errors. `discard` ends a fragment invocation. Functions with results can't run off the end.
+`for` is the only loop and comes in three forms: `for init; condition; step`, `for condition`, and a bare `for`. Bare `for` loops with no `break`, `return`, or `kill` inside can never end and are reported as errors. Functions with results can't run off the end.
+
+### Kill and demote
+
+Fragment shaders have two ways to throw away a fragment. `demote` demotes the current thread to a *helper thread* and `kill` kills the entire thread.
+
+Helper threads run to the end of the shader with their outputs and later writes to memory thrown away. Neighboring threads in the quad can still compute derivatives with them. Killed threads stop right there. Derivatives after a `kill` in divergent code are an error.
+
+Most shading languages only give you one or the other through a single `discard`. Which one you get is kind of undefined and ironically depends on the API you're using. You can never quite be sure. Sometimes the meaning even changes between versions of the same API:
+
+| API | What `discard` does |
+| --- | --- |
+| OpenGL | kills |
+| Vulkan | either, depending on the driver |
+| Direct3D 12 | demotes |
+| WebGPU | demotes |
+| Metal 2.2 and earlier | kills |
+| Metal 2.3 and later | demotes |
+
+Bento gives you both and their meaning will never change. `kill` is always available. `demote` is the odd one where, if necessary, Bento will [emulate it](targets.html#kill-and-demote).
 
 ## Functions and results
 
@@ -327,6 +348,8 @@ const SWIZZLED = f32x4 { 1, 2, 3, 4 }.wzyx.x01y;
 
 Bento folds these to `89.0`, `512`, and `{ 4, 0, 1, 3 }`.
 
+Wherever Bento expects a constant, a named constant converts by value just like a literal does. `const MASK: u8 = WIDTH - 1;` compiles as long as the value fits in a `u8`, whatever integer type `WIDTH` has. The same goes for attribute arguments and for the values and ranges of a domain, as in `domain Lanes { 1, WIDE..=MAX }`.
+
 `const if` and `const for` are type checked like any other code, unlike a preprocessor `#if`, whose disabled text is never even parsed. The chosen arm of a `const if` is spliced into the surrounding scope. A `const for` is unrolled. A `const for` that doesn't terminate statically is an error.
 
 ```bento
@@ -348,10 +371,10 @@ fn soften(c: f32x4) -> f32x4 {
 
 ## Generics
 
-Generic parameters go in brackets after the name and are known at compile time. Parameters with a bound, like `T: Number`, are type parameters. Those with a type, like `N: u32`, are value parameters.
+Generic parameters go in brackets after the name and are known at compile time. Parameters with a bound, like `T: Numeric`, are type parameters. Those with a type, like `N: u32`, are value parameters.
 
 ```bento
-fn sum[T: Number, N: u32](xs: [array; N]T) -> T {
+fn sum[T: Numeric, N: u32](xs: [array; N]T) -> T {
 	let total: T = 0;
 	for let i: u32 = 0; i < N; i += 1 {
 		total += xs[i];
@@ -359,7 +382,7 @@ fn sum[T: Number, N: u32](xs: [array; N]T) -> T {
 	return total;
 }
 
-fn lerp[T: Float, N: u32](a: [vector; N]T, b: [vector; N]T, t: T) -> [vector; N]T {
+fn lerp[T: Floating, N: u32](a: [vector; N]T, b: [vector; N]T, t: T) -> [vector; N]T {
 	return a + (b - a) * t;
 }
 
@@ -372,10 +395,12 @@ Unlike templates in C++ and HLSL, generics are type checked once and can be expo
 | Bound | Members | Allows |
 | --- | --- | --- |
 | none | any value that can be stored | copying, passing, returning, and arrays |
-| `Number` | every integer and float | arithmetic, comparisons, and `as` |
-| `Integer` | `i8` to `u64` | bitwise operators and the bit builtins |
-| `Signed` | signed integers and floats | negative literals, `abs`, and `sign` |
-| `Float` | `f16` and `f32` | float literals, the float math library, and derivatives |
+| `Numeric` | every integer and float | arithmetic, comparisons, and `as` |
+| `Integral` | `i8` to `u64` | bitwise operators and the bit builtins |
+| `Signed` | `i8` to `i64` | negative integer literals, `abs`, and `sign` |
+| `Unsigned` | `u8` to `u64` | the builtins only unsigned integers have, like `add_carry` |
+| `Floating` | `f16` and `f32` | float literals, the float math library, and derivatives |
+| `Boolean` | `b8`, `b16`, and `b32` | `true` and `false`, logic operators, and conditions |
 
 Lengths can be written with arithmetic on generic parameters too:
 
@@ -648,6 +673,7 @@ Entry points are declared with `[[stage(...)]]` and one of `.Vertex`, `.Fragment
 | `attribute(n)` | vertex input | vertex attribute `n` |
 | `location(n)` | vertex output, fragment input | varying `n` |
 | `color(n)` | fragment output | color attachment `n` |
+| `color(0, 1)` | fragment output | second color of attachment 0, for [dual-source blending](#dual-source-blending) |
 | `position`, `frag_depth` | vertex output, fragment output | clip position and depth |
 | `storage(n)`, `constant(n)` | input | storage and constant buffers |
 | `image(n)`, `texture(n)`, `sampler(n)` | input | images, textures and sampled textures, and samplers |
@@ -689,6 +715,28 @@ fn paint(fs: Lit) -> Target {
 ```
 
 The fragment input includes the vertex output with `...Varyings`.
+
+### Dual-source blending
+
+Blending normally mixes one color from the fragment shader with the color already in the attachment. *Dual-source blending* gives the blend a second color from the shader that's only read by blend factors like `SRC1_COLOR`. Subpixel text uses it to blend each channel with its own coverage. GLSL, HLSL, and Metal each spell it differently:
+
+| Language | Second color of attachment 0 |
+| --- | --- |
+| GLSL | `layout(location = 0, index = 1)` |
+| HLSL | `SV_Target1` |
+| Metal | `[[color(0), index(1)]]` |
+| Bento | `[[color(0, 1)]]` |
+
+In Bento the second argument of `color` picks the source. `color(0)` is short for `color(0, 0)`.
+
+```bento
+struct Subpixel {
+	[[color(0)]]    color:    f32x4,
+	[[color(0, 1)]] coverage: f32x4,
+}
+```
+
+Bento only accepts a second source for `color(0)`, the one attachment Direct3D 12 and Metal can blend two sources into. `color(0, 1)` and `color(1)` can't be used together because Direct3D 12 writes both to `SV_Target1`.
 
 ## Context parameters
 
@@ -779,7 +827,7 @@ Bento lowers the same source to the Vulkan ray tracing pipeline, to ray queries 
 
 ## Modules
 
-Files that start with `module name;` are modules. Other modules use the declarations marked with `export` through qualified names, or bring them in with `using`. `export` goes after any attributes, as in `[[opcode(33)]] export fn round(x: f32) -> f32;` from `std`.
+Files that start with `module name;` are modules. Other modules use the declarations marked with `export` through qualified names, or bring them in with `using`. `export` goes after any attributes, as in `[[opcode(63)]] export fn round(x: f32) -> f32;` from `std`.
 
 ```bento light.bento
 /// Lighting helpers.
@@ -848,6 +896,8 @@ intersect
 : intersection function for procedural ray tracing geometry
 
 Unknown, misplaced, and repeated attributes and wrong argument counts are all errors.
+
+Attribute arguments are constant expressions, type checked just like the arguments of a call. Binding numbers and workgroup sizes are integers and `inline` takes a `b32`. Selectors like `.Flat` and `.Reassoc` belong to an enum of their attribute. Named constants work anywhere a number or a selector does, as in `[[workgroup_size(TILE, TILE / 2)]]`. Limits like a workgroup size of at least 1 are domains. That's why `[[workgroup_size(0)]]` fails the same way `let t: Tap = 3;` does.
 
 ## Not in the language
 

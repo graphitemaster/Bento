@@ -51,7 +51,7 @@ function rewrite(url) {
 	});
 }
 
-var BENTO_KEYWORDS = /^(fn|if|else|for|return|break|continue|discard|enum|struct|type|let|const|import|export|module|using|thread|simdgroup|workgroup|partgroup|quadgroup|dispatch|storage|constant|as|domain|interface|context|with|requires|feature|in)$/;
+var BENTO_KEYWORDS = /^(fn|if|else|for|return|break|continue|kill|demote|enum|struct|type|let|const|import|export|module|using|thread|simdgroup|workgroup|partgroup|quadgroup|dispatch|storage|constant|as|domain|interface|context|with|requires|feature|in)$/;
 var BENTO_KINDS = /^(array|table|layer|vector|matrix|image|texture|sampled)$/;
 var BENTO_TYPES = /^(sampler|scene|r16|r32)$/;
 var GLSL_KEYWORDS = /^(layout|in|out|inout|uniform|buffer|struct|return|if|else|for|while|do|break|continue|discard|const|readonly|writeonly|restrict|coherent|flat|smooth|noperspective|shared|precision|highp|mediump|lowp|true|false|std140|std430|binding|location|set|local_size_x|local_size_y|local_size_z)$/;

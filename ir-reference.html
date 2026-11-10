@@ -59,16 +59,16 @@ Names from other modules are qualified, as in `@noise::hash`. Every overload aft
 fn @tint(location 0 Flat u32) -> Out [color 0] export Fragment
 fn @main(storage 0 &storage [array; _]f32x4, constant 1 &constant f32) -> () export Compute 64 1 1
 fn @fold(u32) -> u32 import
-fn @sin[T: Float, N: u32]([vector; N]T) -> [vector; N]T export opcode 40
+fn @sin[T: Floating, N: u32]([vector; N]T) -> [vector; N]T export opcode 40
 fn @lerp[f32, 4](f32x4, f32x4, f32) -> f32x4 internal
-template @lerp[T: Float, N: u32]([vector; N]T, [vector; N]T, T) -> [vector; N]T export
+template @lerp[T: Floating, N: u32]([vector; N]T, [vector; N]T, T) -> [vector; N]T export
 ```
 
 A signature lists the generic parameters, or the arguments of an instance, followed by the parameter types and the result. The rest of it is made up of these parts:
 
 | Part | Meaning |
 | --- | --- |
-| `[T: Float, N: u32]` after the name | Generic parameters of a prototype or template: types with a bound of `Number`, `Integer`, `Signed`, or `Float`, or `u32` counts. |
+| `[T: Floating, N: u32]` after the name | Generic parameters of a prototype or template: types with a bound of `Numeric`, `Integral`, `Signed`, `Unsigned`, `Floating`, or `Boolean`, or `u32` counts. |
 | `[f32, 4]` after the name | Arguments of an instance of the template with the same name. Instances of an imported template have no body until linked. |
 | binding before a parameter | Input of an entry point, as in `location 0 Flat`. |
 | `[…]` after the result | Bindings of the fields of the result of an entry point. |
@@ -99,7 +99,7 @@ A literal whose type is a parameter is stored in every form an instance might ne
 | --- | --- | --- |
 | `attribute n` | vertex inputs | Vertex attribute `n`. |
 | `location n` | fragment inputs, vertex outputs | Varying `n`, with `Flat` or `NoPerspective` after it unless smooth. |
-| `color n` | fragment outputs | Color attachment `n`. |
+| `color n` | fragment outputs | Color attachment `n`, with `index 1` after it for the second source of dual-source blending. |
 | `storage n` | bound globals | Storage buffer, read as a `&storage` reference. |
 | `constant n` | bound globals | Constant buffer, read as a `&constant` reference. |
 | `image n` | bound globals | Storage image. |
@@ -124,7 +124,7 @@ Builtins are read with the `input` instruction.
 
 | Type | Meaning |
 | --- | --- |
-| `b32` | Boolean, 32 bits wide in memory. |
+| `b8`, `b16`, `b32` | Booleans, 8, 16, or 32 bits wide in memory and the same everywhere else. |
 | `i8`, `i16`, `i32`, `i64` | Signed integers. |
 | `u8`, `u16`, `u32`, `u64` | Unsigned integers. |
 | `f16`, `f32` | Floats. |
@@ -179,7 +179,7 @@ All control flow is structured. Every block ends in exactly one jump. Values are
 | `break %bbN, $k` | Leaves the innermost loop by break edge `k`. |
 | `continue %bbB, $k` | Starts the next trip of the innermost loop by continue edge `k`. |
 | `return v, …` | Returns the result, or the elements of a tuple result. Entry points with outputs return the result struct. |
-| `discard` | Ends a fragment invocation without writing its outputs. |
+| `kill` | Kills the current thread without writing its outputs. |
 | `%r = phi a, b, …` | Merges a value from each edge into the block. |
 
 A PHI after an `if` has an operand for the then arm and one for the else arm. A PHI at the top of a loop body has the value from before the loop, followed by one operand for each continue edge in order, and a PHI after a loop has one for each break edge in order. When an edge no longer leads to the block, its operand is none.
@@ -213,7 +213,7 @@ The operands of arithmetic, bitwise, and logic instructions have the type of the
 
 ### Math
 
-These are the functions of GLSL.std.450. Their operands have the type of the result. Unlike the arithmetic instructions, scalars aren't spread. Floats are 16 or 32 bits wide and integers 32 bits.
+These are the functions of GLSL.std.450 and the float functions Metal and HLSL have beyond them. Their operands have the type of the result. Unlike the arithmetic instructions, scalars aren't spread. Floats are 16 or 32 bits wide and integers 32 bits.
 
 | Instruction | Meaning |
 | --- | --- |
@@ -231,6 +231,12 @@ These are the functions of GLSL.std.450. Their operands have the type of the res
 | `fpow a, b` | `a` raised to `b`. |
 | `fexp a`, `fexp2 a`, `flog a`, `flog2 a` | `e` or `2` raised to `a`, and the logarithms in those bases. |
 | `fsqrt a`, `frsqrt a` | Square root and its reciprocal. |
+| `fexp10 a`, `flog10 a` | 10 raised to `a`, and the logarithm in base 10. |
+| `fsinpi a`, `fcospi a`, `ftanpi a` | `fsin`, `fcos`, and `ftan` of `π * a`. |
+| `fsincos a` | Two results: the sine and the cosine of `a`. |
+| `fsaturate a` | `a` limited to `0.0` through `1.0`. |
+| `fmin3 a, b, c`, `fmax3 a, b, c`, `fmed3 a, b, c` | Smallest, largest, or middle of three. |
+| `fnextafter a, b` | The next float after `a` toward `b`, or `b` when they are equal. |
 | `fmodf a` | Two results: the fraction and the whole part, both with the sign of `a`. |
 | `ffrexp a` | Two results: the significand from `0.5` up to `1.0` and the exponent in `i32` lanes. |
 | `fldexp a, e` | `a` times 2 raised to `e`, which has `i32` lanes. |
@@ -247,9 +253,29 @@ These are the functions of GLSL.std.450. Their operands have the type of the res
 | `bfi base, insert, offset, count` | `base` with `count` bits from `offset` replaced by the low bits of `insert`. |
 | `ibfe base, offset, count`, `ubfe base, offset, count` | `count` bits of `base` from `offset`, sign or zero extended. |
 
+### Integer math
+
+These are the integer functions Metal and HLSL have beyond GLSL. Operands have the type of the result and scalars aren't spread. Integers are 8, 16, or 32 bits wide, and the 24-bit products take 32.
+
+| Instruction | Meaning |
+| --- | --- |
+| `bcount a` | Number of set bits. |
+| `brev a` | The bits in reverse order. |
+| `iclz a`, `ictz a` | Number of zeros above the highest set bit or below the lowest, or the width for zero. |
+| `irotate a, n` | `a` rotated left by `n` modulo the width. |
+| `iaddsat a, b`, `uaddsat a, b`, `isubsat a, b`, `usubsat a, b` | `a + b` and `a - b` held at the limits of the type. |
+| `imadsat a, b, c`, `umadsat a, b, c` | `a * b + c` held at the limits of the type. |
+| `iabsdiff a, b`, `uabsdiff a, b` | Distance between `a` and `b`, as unsigned bits. |
+| `ihadd a, b`, `uhadd a, b`, `irhadd a, b`, `urhadd a, b` | `(a + b) >> 1` and `(a + b + 1) >> 1`, without overflow. |
+| `imulhi a, b`, `umulhi a, b` | High half of the product at twice the width. |
+| `imadhi a, b, c`, `umadhi a, b, c` | That high half plus `c`. |
+| `imul24 a, b`, `umul24 a, b`, `imad24 a, b, c`, `umad24 a, b, c` | Product of operands in 24 bits, plus `c`. Operands outside 24 bits give any product. |
+| `imad a, b, c` | `a * b + c`. |
+| `imin3`, `umin3`, `imax3`, `umax3`, `imed3`, `umed3` | Smallest, largest, or middle of three. |
+
 ### Comparison and logic
 
-A comparison gives a `b32` with the lanes of the wider operand. Enums are compared with the integer comparisons.
+A comparison gives a `b32` with the lanes of the wider operand. Enums and domains are compared with the comparisons of the type underneath them.
 
 | Instruction | Meaning |
 | --- | --- |
@@ -260,7 +286,7 @@ A comparison gives a `b32` with the lanes of the wider operand. Enums are compar
 | `igt`, `ugt`, `fgt` | `a > b`. |
 | `igeq`, `ugeq`, `fgeq` | `a >= b`. |
 | `isnan`, `isinf`, `isfinite`, `isnormal` | Classification of each lane of a float. |
-| `land a, b`, `lor a, b`, `lnot a` | Logical and, or, and not on `b32`. |
+| `land a, b`, `lor a, b`, `lnot a` | Logical and, or, and not on booleans of one width. |
 | `any v`, `all v` | Whether any or every lane of a `b32` vector is true. |
 | `select c, a, b` | `a` where `c` is true and `b` elsewhere, lane by lane. `c` is a `b32` scalar or has the lanes of the result. |
 
@@ -269,6 +295,9 @@ A comparison gives a `b32` with the lanes of the wider operand. Enums are compar
 | Instruction | Meaning |
 | --- | --- |
 | `idot a, b`, `fdot a, b` | Dot product of two vectors. |
+| `dot4addi8 a, b, c`, `dot4addu8 a, b, c` | `c` plus the dot product of the four signed or unsigned bytes of the `u32`s `a` and `b`. |
+| `fdot2add a, b, c` | `c`, an `f32`, plus the dot product of two `f16x2`. |
+| `msad r, s, c` | `c` plus the differences of the bytes of the `u32`s `r` and `s` where the byte of `r` isn't zero. |
 | `cross a, b` | Cross product of two float vectors of 3 lanes. |
 | `mmul a, b` | Matrix product of a matrix and a vector, a vector and a matrix, or two matrices. |
 | `mtranspose m` | Transposed matrix. |
@@ -287,13 +316,29 @@ A comparison gives a `b32` with the lanes of the wider operand. Enums are compar
 
 | Instruction | Meaning |
 | --- | --- |
-| `convert a` | Value converted to the scalar type of the result, lane by lane. Vectors keep their lanes and matrices their shape. Enums convert to and from scalars. |
+| `convert a` | Value converted to the scalar type of the result, lane by lane. Vectors keep their lanes and matrices their shape. Enums and domains convert to and from scalars. |
 | `bitcast a` | The same bits as another scalar or vector type of the same size. |
 | `packsnorm4x8 v`, `packunorm4x8 v` | `f32x4` to `u32`, each lane clamped and scaled to 8 signed or unsigned normalized bits. |
 | `packsnorm2x16 v`, `packunorm2x16 v`, `packhalf2x16 v` | `f32x2` to `u32`, each lane as 16 normalized bits or as an `f16`. |
 | `unpacksnorm4x8 w`, `unpackunorm4x8 w`, `unpacksnorm2x16 w`, `unpackunorm2x16 w`, `unpackhalf2x16 w` | `u32` back to `f32x4` or `f32x2`. |
+| `packunorm10a2 v`, `packsnorm10a2 v` | `f32x4` to `u32`, with 10 bits for each of the first three lanes and 2 for the last. |
+| `packunorm565 v` | `f32x3` to the low 16 bits of a `u32`, with 5, 6, and 5 bits. |
+| `packsrgb4x8 v` | `f32x4` to `u32` as `packunorm4x8` does, with the first three lanes encoded as sRGB. |
+| `unpackunorm10a2 w`, `unpacksnorm10a2 w`, `unpackunorm565 w`, `unpacksrgb4x8 w` | `u32` back to `f32x4` or `f32x3`. |
+| `pack8 v`, `packclampu8 v`, `packclamps8 v` | Four 32-bit integer lanes to a byte each of a `u32`, cut to the low 8 bits or clamped to `0` through `255` or `-128` through `127` first. |
+| `unpacku8 w`, `unpacks8 w` | The bytes of a `u32` to four 32-bit lanes, zero or sign extended. |
+| `packhalf a`, `unpackhalf w` | `f32` lanes to the `f16` bits in the low half of `u32` lanes, and back. |
 
 Packing puts the first lane in the lowest bits.
+
+### Domains
+
+A value of a domain type can hold any value of the type underneath it, which is what `convert` gives from a plain number. These two ask where it falls among the values the domain lists.
+
+| Instruction | Meaning |
+| --- | --- |
+| `member a` | Whether `a` is one of the values of its domain, as a `b32`. |
+| `rank a` | Position of `a` among the values of its domain in ascending order, as a `u32`. A value outside the domain gives any position. |
 
 ### Memory
 
@@ -320,7 +365,10 @@ Packing puts the first lane in the lowest bits.
 | Instruction | Meaning |
 | --- | --- |
 | `dpdx a`, `dpdy a` | Derivative of a float across the pixels of a quad, horizontally or vertically. |
+| `dpdxfine a`, `dpdyfine a` | The same between neighboring pixels. |
+| `dpdxcoarse a`, `dpdycoarse a` | The same once for the whole quad. |
 | `fwidth a` | Sum of the absolute derivatives in both directions. |
+| `fwidthfine a`, `fwidthcoarse a` | The same from the fine or coarse derivatives. |
 
 ### Calls
 
@@ -332,12 +380,13 @@ Packing puts the first lane in the lowest bits.
 
 | Instruction | Meaning |
 | --- | --- |
+| `demote` | Demotes the current thread to a helper thread. Its outputs and later writes to memory are thrown away. Doesn't end the block. |
 | `undef` | Value of the result type with no defined contents. |
 | `nop` | No operation, left by passes until the block is compacted. |
 
 ## Effects
 
-Every instruction is pure, convergent, or impure. Passes are written against the effect rather than the opcode. The derivatives `dpdx`, `dpdy`, and `fwidth` are convergent and never moved into or out of control flow. `store`, `imgstore`, and the control flow instructions are impure. A `call` has the effects of its callee. Calls to imports are impure because an import has no body to look at. Everything else is pure.
+Every instruction is pure, convergent, or impure. Passes are written against the effect rather than the opcode. The derivatives, from `dpdx` to `fwidth`, are convergent and never moved into or out of control flow. `store`, `imgstore`, and the control flow instructions are impure. A `call` has the effects of its callee. Calls to imports are impure because an import has no body to look at. Everything else is pure.
 </script>
 </body>
 </html>

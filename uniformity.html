@@ -35,7 +35,7 @@ Computed values are only as uniform as their least uniform input. The workgroup 
 
 When an `if` tests a simdgroup uniform condition, every thread of a simdgroup goes the same way and the simdgroup stays together. When the condition is thread varying, the threads split up and stay apart until the end of the `if`. Everything computed inside is thread varying, even a constant chosen by one arm, because which arm ran differs from thread to thread.
 
-Early exits spread divergence further. In divergent code, a `return` or `discard` makes the rest of the function divergent. A `break` or `continue` does the same to the rest of the loop. Threads come back together at the end of every `if` and loop.
+Early exits spread divergence further. In divergent code, a `return` or `kill` makes the rest of the function divergent. A `break` or `continue` does the same to the rest of the loop. `demote` never makes code divergent. Threads come back together at the end of every `if` and loop.
 
 ## Requirements
 
