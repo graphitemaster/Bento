@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Floating point · Bento</title>
+	<meta name="description" content="Floating point in Bento is strict IEEE arithmetic by default. Math flags loosen it for any block or function, and one override covers the whole shader.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Floating point
+
+Existing shading languages give you very little control over how floating point operations are evaluated. Usually the default is some form of fast math. That can be undesirable and can even change with the shading language and the target you compile to. When float controls are given, as with `precise`, bugs in compilers and lowering passes can break them. In some ways they're only advisory. When the controls do work, they're sometimes too coarse. Metal's fast math option and the `-Gis` switch of DXC apply to everything they compile.
+
+We wanted to solve this in Bento, in large part because precision, or even just consistency, sometimes matters a great deal. Bento gives you fine-grained control over floating point operations in any block or function and a global override for when you genuinely don't care.
+
+## Strict by default
+
+Bento code follows IEEE 754 unless it says otherwise. A multiply and an add are never fused into an `fma`, operations happen in the order they're written, and NaNs, infinities, and signed zeros are preserved.
+
+## Math flags
+
+The `math` attribute loosens the rules for one function or block:
+
+| Flag | Allows |
+| --- | --- |
+| `.Contract` | fusing a multiply and an add into one `fma` |
+| `.Reassoc` | changing the order of operations, as in `(a + b) + c` to `a + (b + c)` |
+| `.Transform` | `.Contract`, `.Reassoc`, and other algebraic rewrites such as `x / y` to `x * (1 / y)` |
+| `.NoNaNs` | assuming no value is NaN |
+| `.NoInfs` | assuming no value is infinite |
+| `.NoSignedZeros` | treating `-0.0` and `0.0` as the same number |
+
+Only the innermost `math` around an operation is used. Strict code in the middle of a fast function is written as a block with a bare `[[math]]`. Flags are never inherited through a call, whether the callee is inlined or not.
+
+Some algorithms only work in strict arithmetic. Kahan summation measures the rounding error of each add as `(t - sum) - y` and subtracts it from the next value. In exact arithmetic that expression is always zero. When allowed to reassociate, a compiler can replace the correction with a constant zero here:
+
+```bento
+[[math(.Transform)]]
+fn total(values: [array; 16]f32) -> f32 {
+	let sum = 0.0;
+	let c = 0.0;
+	for let i: u32 = 0; i < 16; i += 1 {
+		let y = values[i] - c;
+		[[math]] {
+			let t = sum + y;
+			c = (t - sum) - y;
+			sum = t;
+		}
+	}
+	return sum;
+}
+```
+
+[Bento's optimizer](optimizer.md#algebra) respects the same flags. A rewrite that gives exactly the same result is always made, but one that doesn't is only made under the matching flag. A multiply and an add are only fused into an `fma` under `.Contract`, for instance, and `!(a < b)` is only rewritten as `a >= b` under `.NoNaNs`.
+
+## Overriding everything
+
+For when you genuinely don't care, or want to rule fast math out while chasing a bug, `--math-flags` replaces the flags of every block. `bento-c` applies it to the IR before optimizing. `bento-llc`, or `math_override` and `math_flags` in `BTOGenOptions`, apply it while generating code. An empty list makes everything strict:
+
+```sh
+bento-c --math-flags=allowtransform,nonans,noinfs,nosignedzero shader.bento
+bento-llc --math-flags= shader.bbc
+```
+
+## Targets
+
+This is achieved differently depending on the [target](targets.md#float-controls):
+
+| Target | How the flags are written |
+| --- | --- |
+| SPIR-V for Vulkan 1.4, or earlier with `--vk-shader-float-controls2` | `FPFastMathDefault` for strict code and `FPFastMathMode` on each instruction of a block with flags |
+| SPIR-V for earlier Vulkan | `NoContraction` on the arithmetic of every block without `.Transform`, and `SignedZeroInfNanPreserve` for the entry point on devices that can preserve signed zeros, infinities, and NaNs |
+| SPIR-V for OpenGL | `NoContraction` on the arithmetic of every block without `.Transform` |
+| AIR | LLVM fast-math flags on each instruction. The module itself is compiled without fast math. |
+| DXIL | LLVM fast-math flags on each instruction. LLVM 3.7 has no flags for `.Contract` and `.Reassoc`. |
+| GLSL | `precise` on the results of every block without `.Transform` |
+
+When a target can't express exactly what was asked for, Bento errs on the side of strict. Without `SPV_KHR_float_controls2`, contraction, reassociation, and transforms can only be turned off together in SPIR-V. Code that allows only `.Contract` is compiled fully strict there.
+
+Unfortunately, some things can't be expressed. For instance, in Vulkan strict math can't be fully preserved without `shaderSignedZeroInfNanPreserve`. In OpenGL, and with GLSL, no promise is made about NaNs, infinities, and signed zeros either. GLSL ES 3.10 has no `precise` at all.
+
+## Driver bugs
+
+Correct output from Bento still has to be compiled correctly by the driver. NVIDIA's OpenGL driver 615.78.08, for instance, computes `unpack_unorm4x8` in half precision whenever the result is used in `precise` arithmetic. Any strict code in Bento that unpacks bytes for OpenGL is affected. Vulkan on the same GPU is unaffected.
+
+Bento works around bugs like this with [driver quirks](targets.md#driver-quirks). Each quirk replaces something a driver mishandles with code the driver handles correctly. For this bug, the unpack is written out as shifts, masks, and a divide by 255. Hosts turn on the quirks their driver needs.
+</script>
+</body>
+</html>

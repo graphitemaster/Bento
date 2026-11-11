@@ -9,6 +9,7 @@ var NAV = [
 	{ group: 'Language', pages: [
 		['language', 'Language tour'],
 		['uniformity', 'Uniformity'],
+		['floats', 'Floating point'],
 		['uber', 'Uber shaders'],
 		['bindless', 'Bindings and bindless'],
 	] },
@@ -553,7 +554,7 @@ function current() {
 function header(page) {
 	if (document.querySelector('header.site')) return;
 	var links = TOP.map(function (entry) {
-		var here = entry[0] === page || (entry[0] === 'language' && /^(uniformity|bindless)$/.test(page))
+		var here = entry[0] === page || (entry[0] === 'language' && /^(uniformity|floats|bindless)$/.test(page))
 			|| (entry[0] === 'toolchain' && /^(ir|ir-reference|optimizer|targets)$/.test(page));
 		return '<a href="' + entry[0] + '.html"' + (here ? ' aria-current="page"' : '') + '>' + entry[1] + '</a>';
 	}).join('');

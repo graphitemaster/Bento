@@ -34,6 +34,7 @@ Each option is a flag of `bento-llc` and a field of `BTOGenOptions`. `bto_gen_de
 | `--env=NAME` | `environment` | SPIR-V, AIR | Names where the shader runs, from the tables under [SPIR-V](#spir-v) and [AIR](#air-for-metal). SPIR-V defaults to `vulkan1.0` and AIR to `macos14`. |
 | `--spirv=1.N` | `version` | SPIR-V | Writes that version of SPIR-V instead of the default of the environment. The field holds `100 + 10 * N`, such as `130` for 1.3. |
 | `--es` | `es` | GLSL | Writes GLSL ES 3.10 instead of GLSL 4.50. |
+| `--math-flags=FLAGS` | `math_override`, `math_flags` | SPIR-V, AIR, DXIL, GLSL | Replaces the math flags of every block with `FLAGS`, a list of `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, and `nosignedzero` separated by commas. An empty list makes every block strict. |
 | `--vk-combined-image-samplers` | `vk_combined_image_samplers` | SPIR-V for Vulkan | Makes stored sampled textures combined image samplers instead of a sampled image and a sampler joined in the shader. Each one is an index into binding 3 of set 3 followed by 8 bytes of zero, as described under [bindless](#bindless). |
 | `--vk-maintenance8` | `vk_maintenance8` | SPIR-V for Vulkan | Writes a signed `%` as `OpSRem` instead of `a - b * (a / b)`. |
 | `--vk-maintenance9` | `vk_maintenance9` | SPIR-V for Vulkan | Writes `bit_count` and `bitfield_reverse` of 8 and 16 bits directly instead of through 32 bits. |
@@ -41,14 +42,23 @@ Each option is a flag of `bento-llc` and a field of `BTOGenOptions`. `bto_gen_de
 | `--vk-shader-integer-functions2` | `vk_shader_integer_functions2` | SPIR-V for Vulkan | Writes `add_sat`, `sub_sat`, `abs_diff`, `hadd`, `rhadd`, and 32-bit `leading_zeros` and `trailing_zeros` as the instructions of `SPV_INTEL_shader_integer_functions2`. |
 | `--vk-shader-trinary-minmax` | `vk_shader_trinary_minmax` | SPIR-V for Vulkan | Writes `min3`, `max3`, and `median3` as the instructions of `SPV_AMD_shader_trinary_minmax`. |
 | `--vk-shader-mixed-float-dot-product` | `vk_shader_mixed_float_dot_product` | SPIR-V for Vulkan | Writes `dot2_add` as `OpFDot2MixAcc32VALVE`. |
+| `--vk-shader-float-controls2` | `vk_shader_float_controls2` | SPIR-V for Vulkan | Writes math flags with `SPV_KHR_float_controls2`, as described under [float controls](#float-controls). Environments from `vulkan1.4` on do so without the option. |
+| `--vk-signed-zero-inf-nan-preserve` | `vk_signed_zero_inf_nan_preserve` | SPIR-V for Vulkan | Keeps signed zeros, infinities, and NaNs in strict code, for devices with `shaderSignedZeroInfNanPreserveFloat16`, `32`, and `64`. |
 | `--gl-demote-to-helper-invocation` | `gl_demote_to_helper_invocation` | GLSL, SPIR-V for OpenGL | Writes `demote` directly instead of emulating it, as described under [kill and demote](#kill-and-demote). |
 | `--gl-integer-dot-product` | `gl_integer_dot_product` | GLSL, SPIR-V for OpenGL | Writes integer `dot`, `dot4_add_i8`, and `dot4_add_u8` with `GL_EXT_integer_dot_product`. |
 | `--gl-shader-integer-functions2` | `gl_shader_integer_functions2` | GLSL, SPIR-V for OpenGL | Writes the functions of `--vk-shader-integer-functions2` with `GL_INTEL_shader_integer_functions2`. GLSL has them from 16 bits up. |
 | `--gl-shader-trinary-minmax` | `gl_shader_trinary_minmax` | GLSL, SPIR-V for OpenGL | Writes `min3`, `max3`, and `median3` with `GL_AMD_shader_trinary_minmax`. GLSL has them only at 32 bits. |
+| `--gl-quirk-unpack-unorm4x8` | `gl_quirk_unpack_unorm4x8` | GLSL, SPIR-V for OpenGL | Writes the normalized packs and unpacks as shifts, masks, and arithmetic, for drivers whose `unpackUnorm4x8` loses precision, as described under [driver quirks](#driver-quirks). |
 
 Vulkan makes `OpSRem` poison when either operand is negative unless the device enables the `maintenance8` feature of `VK_KHR_maintenance8`. Only pass `--vk-maintenance8` for devices with the feature enabled. Options for one API are errors in an environment of the other: `--vk-` ones with `--env=opengl4.5` and `--gl-` ones with a Vulkan environment.
 
 Other shading languages compile a shader once for a version of an API. Every GPU with that version then runs the same code, whatever else its driver offers. GPUs differ in more than the version they report, though. Some have saturating adds, averages, and three-way minimums as single instructions. Newer drivers lift old limits, such as bit counts that only work on 32-bit integers. The generator options name these extras, like `vk_maintenance9` or `gl_shader_integer_functions2`. Each one turns off the lowering that stands in for a missing instruction and lets the generator emit the native one. A host compiling IR on the machine it runs on fills the options in from the extensions the driver reports and gets code tuned for that GPU.
+
+### Driver quirks
+
+Drivers have bugs too, and some of them are in how a driver compiles a built-in function. The options with `quirk` in their names work around these. Where the other options turn a lowering off, a quirk turns one on, and the driver never sees the built-in it mishandles. A driver can't report its own bugs. The host picks the quirks from the vendor and version strings instead.
+
+`gl_quirk_unpack_unorm4x8` is for NVIDIA's OpenGL drivers, as of 615.78.08. When the result of `unpack_unorm4x8` feeds arithmetic marked `precise` in GLSL or `NoContraction` in SPIR-V, every component comes back rounded to half precision, off by thousands of ulp. Bento marks strict arithmetic `precise` in GLSL and `NoContraction` in SPIR-V, and any strict block that unpacks bytes runs into it. Vulkan on the same driver is fine. The quirk has Bento write the normalized packs and unpacks the way GLSL defines them: shifts, masks, conversions, and a divide by 255 for each byte.
 
 ## Kill and demote
 
@@ -211,6 +221,14 @@ Capabilities and extensions are only declared when something uses them. Derivati
 
 `scale_at` has a `&storage [array; _]f32` parameter and is called for two different buffers. Each call goes to its own copy of the function, built on the variable of that buffer. The index is passed in as an ordinary parameter.
 
+### Float controls
+
+When SPIR-V says nothing about float math, Vulkan allows contraction, reassociation, reciprocals, and other transforms on every float instruction, and assumes most of them never see NaNs, infinities, or signed zeros. Bento code is strict unless a block has math flags, and the SPIR-V has to say so.
+
+With `SPV_KHR_float_controls2`, each float width gets a strict `FPFastMathDefault` on the entry point and the instructions of blocks with flags get `FPFastMathMode`. Devices without `shaderSignedZeroInfNanPreserve` allow nothing stricter than `NSZ`, `NotInf`, and `NotNaN`. Those three are part of every mask unless `--vk-signed-zero-inf-nan-preserve` is given.
+
+Older environments have only `NoContraction` and `SignedZeroInfNanPreserve`. `NoContraction` turns off contraction, reassociation, reciprocals, and transforms together. It goes on the arithmetic instructions of every block without `allowtransform`, the only instructions SPIR-V allows it on. `SignedZeroInfNanPreserve` is set for the whole entry point when any block leaves out `nonans`, `noinfs`, or `nosignedzero` and the device preserves them. OpenGL has only `NoContraction`.
+
 ### Textures and samplers
 
 SPIR-V uses the same `OpTypeImage` type for what OpenGL calls textures and what it calls images. The Sampled operand tells them apart: it's 1 for a texture that's used with a sampler or fetched, and 2 for a storage image that's read and written directly. A texture combined with a sampler is an `OpTypeSampledImage` of a Sampled 1 image.
@@ -329,6 +347,8 @@ The copies of functions made by lowering and linking read the buffers directly.
 ::: note
 `&thread` parameters become exact `inout` parameters.
 :::
+
+GLSL has no math flags. Instead, the float results of float operations in every block without `allowtransform` are declared `precise`, the same rule `NoContraction` follows in SPIR-V for OpenGL. `precise` also reaches back through everything that feeds the value within its function. Arithmetic from a block with flags that flows into strict code is strict as well. GLSL ES 3.10 has `precise` only with `GL_OES_gpu_shader5`, and Bento leaves it out of GLSL ES.
 
 An extension is only enabled when the shader uses a feature from it.
 

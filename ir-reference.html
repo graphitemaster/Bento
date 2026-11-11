@@ -316,8 +316,8 @@ A comparison gives a `b32` with the lanes of the wider operand. Enums and domain
 
 | Instruction | Meaning |
 | --- | --- |
-| `convert a` | Value converted to the scalar type of the result, lane by lane. Vectors keep their lanes and matrices their shape. Enums and domains convert to and from scalars. |
-| `bitcast a` | The same bits as another scalar or vector type of the same size. |
+| `convert a` | Value converted to the scalar type of the result, lane by lane. Vectors keep their lanes and matrices their shape. Enums and domains convert to and from scalars. Numbers never convert to booleans. |
+| `bitcast a` | The same bits as an integer or float scalar or vector type of the same size. |
 | `packsnorm4x8 v`, `packunorm4x8 v` | `f32x4` to `u32`, each lane clamped and scaled to 8 signed or unsigned normalized bits. |
 | `packsnorm2x16 v`, `packunorm2x16 v`, `packhalf2x16 v` | `f32x2` to `u32`, each lane as 16 normalized bits or as an `f16`. |
 | `unpacksnorm4x8 w`, `unpackunorm4x8 w`, `unpacksnorm2x16 w`, `unpackunorm2x16 w`, `unpackhalf2x16 w` | `u32` back to `f32x4` or `f32x2`. |

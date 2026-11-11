@@ -13,10 +13,15 @@
 <script type="text/markdown">
 # Getting started
 
-You build Bento with a C compiler and `make`. Running `make install` afterwards copies the tools to the top of the tree:
+To begin, Bento can be built with a C compiler and `make`:
 
 ```sh
 make
+```
+
+You can copy the built command line tools to the top of the tree with:
+
+```sh
 make install
 ```
 
@@ -52,7 +57,7 @@ fn main(px: Pixel) -> Color {
 }
 ```
 
-Compile the shader to bytecode with `bento-c` and then generate GLSL and SPIR-V from that bytecode with `bento-llc`. The `-i` path is where `bento-c` finds `std.bbc`:
+Compile the shader to bytecode with `bento-c` and then generate GLSL and SPIR-V from that bytecode with `bento-llc`. The `-i` switch is used to tell the compiler where to find compiled Bento bytecode for imports. You can have multiple import paths.
 
 ```sh
 bento-c -i .build/debug hello.bento

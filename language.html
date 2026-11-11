@@ -15,7 +15,7 @@
 
 ## Example
 
-In GLSL the inputs and outputs of a shader are loose globals. In Bento an entry point receives its inputs as one struct parameter and returns its outputs as another struct, where every field of both is bound by an attribute.
+In Bento the entry point of your shader receives inputs as a single struct parameter and it returns output as another struct. The members of these structs need to be marked up with attributes that describe the bindings.
 
 ```bento hello.bento
 import std;
@@ -50,7 +50,7 @@ Structs with bindings can only appear as the parameter or result of an entry poi
 | Vectors | `f32x3`, `u8x4`, `b32x2` | 2 to 4 lanes of any scalar |
 | Matrices | `f32x4x4`, `f16x2x3` | floats only, columns first as in GLSL |
 
-Booleans of every width hold `true` and `false` and work with logic operators and conditions. They differ only in the room they take in a buffer or a struct, so `b8` packs flags into bytes where `b32` matches what GLSL and HLSL store. Like integers of different widths, two booleans of different widths only meet through `as`.
+Booleans of every size can only contain the values `true` and `false` and work with logic operators and conditions. They differ only in size. Like integers of different widths, two booleans of different sizes only meet through `as`. Numbers can't be cast to booleans. They have to be compared, as in `x != 0`.
 
 The short names are spellings of a general bracketed form: `f32x3` is short for `[vector; 3]f32` and `f32x4x3` for `[matrix; 4][vector; 3]f32`. You only need the bracketed form when a size comes from a constant or a generic parameter.
 
@@ -885,7 +885,7 @@ workgroup_size(x, y, z)
 early_depth_test
 : depth and stencil testing before a fragment entry point is run
 math(.Reassoc, .Contract, .Transform, .NoNaNs, .NoInfs, .NoSignedZeros)
-: fast-math flags for a function or a block, replacing the flags around it. A bare `math` with no flags makes floating point strict.
+: [fast-math flags](floats.md) for a function or a block, replacing the flags around it. A bare `math` with no flags makes floating point strict.
 inline(true), inline(false)
 : function inlined at every call, even with inlining turned off, or never inlined
 opcode(n)

@@ -50,7 +50,7 @@ The passes run in this order: inlining, mem2reg, SROA, loop inversion, fold and 
 
 ## Algebra
 
-Exact rewrites always apply. The rest are only legal under a fast-math flag set on the block: `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, or `nosignedzero`. Where LLVM's InstCombine writes each rewrite by hand in C++, Bento's rules are a plain table of C macros:
+Exact rewrites always apply. The rest are only legal under a fast-math flag set on the block: `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, or `nosignedzero`. These are described by data-driven search and replace patterns written in a pseudo DSL constructed of C macros:
 
 ```c
 RULE(OP(BAND, IF(ONCE, BNOT, A), IF(ONCE, BNOT, B)), OP(BNOT, OP(BOR, A, B)), 0)
@@ -138,7 +138,7 @@ The square root of an `f16` or `f32` constant folds to the correctly rounded res
 
 With `allowcontract`, a multiply followed by an add becomes one `fma`:
 
-```ir bento-c --fast=nonans,allowcontract --opt mad.bento
+```ir bento-c --math-flags=nonans,allowcontract --opt mad.bento
 fn @mad(f32, f32, f32) -> f32 export
 %bb0(%r1, %r2, %r3) fast(allowcontract, nonans):
 	%r12 = fma %r1, %r2, %r3
